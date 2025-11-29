@@ -96,7 +96,7 @@ export async function connectToWA() {
 
     try {
       await handleMessage(conn, mek, [
-        config.OWNER_NUMBER, // or array of owners
+        config.OWNER_NUMBERS, // or array of owners
       ]);
     } catch (err) {
       console.error("[HANDLER ERROR]", err);
