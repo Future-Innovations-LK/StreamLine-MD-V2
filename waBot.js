@@ -3,6 +3,7 @@ import makeWASocket, {
   Browsers,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
+  jidNormalizedUser,
 } from "@whiskeysockets/baileys";
 import P from "pino";
 import path from "path";
@@ -75,8 +76,9 @@ export async function connectToWA() {
     }
 
     if (connection === "open") {
+      const botJid = jidNormalizedUser(conn.user.id);
       console.log("✅ Bot connected");
-      conn.sendMessage(conn.user.id, {
+      conn.sendMessage(botJid, {
         text: "🤖 Streamline-MD-V2 Bot connected!",
       });
 
@@ -90,14 +92,15 @@ export async function connectToWA() {
   conn.ev.on("messages.upsert", async ({ messages }) => {
     const mek = messages[0];
     if (!mek?.message) return;
-
     // ignore status
     if (mek.key?.remoteJid === "status@broadcast") return;
 
     try {
-      await handleMessage(conn, mek, [
-        config.OWNER_NUMBERS, // or array of owners
-      ]);
+      await handleMessage(
+        conn,
+        mek,
+        config.OWNER_NUMBERS // or array of owners
+      );
     } catch (err) {
       console.error("[HANDLER ERROR]", err);
     }
