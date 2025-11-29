@@ -24,8 +24,8 @@ export async function connectToWA() {
 
   // Use MongoDB for auth state
   const { state, saveCreds } = await useMongoDBAuthState(
-    "mongodb://127.0.0.1:27017", // your MongoDB URI
-    "Streamline-MD-V2" // optional: database name
+    config.MONGODB_URI, // your MongoDB URI
+    config.DB_NAME // optional: database name
   );
 
   const { version } = await fetchLatestBaileysVersion();
