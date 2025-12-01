@@ -8,13 +8,14 @@ import makeWASocket, {
 import P from "pino";
 import path from "path";
 import { fileURLToPath } from "url";
+
 import { loadPlugins } from "./lib/loader.js";
 import { useMongoDBAuthState } from "./lib/auth/mongoAuth.js";
 import config from "./config.js";
 import { handleMessage } from "./messageHandler.js";
 
 // =====================================================
-// ✅ PATH SETUP
+// PATH SETUP
 // =====================================================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,103 +25,15 @@ let plugins = {};
 let pairingRequested = false;
 
 // =====================================================
-// ✅ MASSIVE EMOJI POOL
+// MASSIVE EMOJI POOL
 // =====================================================
 const STATUS_REACTS = [
-  "❤️",
-  "💙",
-  "💚",
-  "💛",
-  "💜",
-  "🧡",
-  "🩷",
-  "🩵",
-  "🤍",
-  "🤎",
-  "💖",
-  "💘",
-  "💝",
-  "💗",
-  "💓",
-  "💞",
-  "💟",
-  "😍",
-  "🥰",
-  "😘",
-  "🔥",
-  "💯",
-  "✨",
-  "⚡",
-  "🌟",
-  "🫶",
-  "🙌",
-  "👏",
-  "😎",
-  "🤯",
-  "😮",
-  "🤩",
-  "🤝",
-  "👌",
-  "👍",
-  "💥",
-  "🎉",
-  "🕺",
-  "💃",
-  "😂",
-  "🤣",
-  "😹",
-  "😆",
-  "😄",
-  "😁",
-  "😅",
-  "😊",
-  "🙂",
-  "😸",
-  "😜",
-  "🤪",
-  "🤭",
-  "👀",
-  "😳",
-  "😱",
-  "🤔",
-  "😏",
-  "😌",
-  "😴",
-  "🥹",
-  "😋",
-  "😶‍🌫️",
-  "😐",
-  "😑",
-  "🙃",
-  "😬",
-  "🫣",
-  "🤗",
-  "🌈",
-  "🌸",
-  "🌼",
-  "🌻",
-  "🍀",
-  "🎨",
-  "📸",
-  "🎬",
-  "🎧",
-  "🎶",
-  "🍿",
-  "☕",
-  "🛸",
-  "🚀",
-  "🐾",
-  "🦋",
-  "😈",
-  "👻",
-  "💀",
-  "🤡",
-  "💩",
-  "👽",
-  "🫠",
-  "🫥",
-  "🤖",
-  "🎯",
+  "❤️","💙","💚","💛","💜","🧡","🩷","🩵","🤍","🤎","💖","💘","💝","💗","💓","💞","💟",
+  "😍","🥰","😘","🔥","💯","✨","⚡","🌟","🫶","🙌","👏","😎","🤯","😮","🤩","🤝","👌","👍",
+  "💥","🎉","🕺","💃","😂","🤣","😹","😆","😄","😁","😅","😊","🙂","😸","😜","🤪","🤭",
+  "👀","😳","😱","🤔","😏","😌","😴","🥹","😋","😶‍🌫️","😐","😑","🙃","😬","🫣","🤗",
+  "🌈","🌸","🌼","🌻","🍀","🎨","📸","🎬","🎧","🎶","🍿","☕","🛸","🚀","🐾","🦋",
+  "😈","👻","💀","🤡","💩","👽","🫠","🫥","🤖","🎯",
 ];
 
 function getRandomReact() {
@@ -128,12 +41,11 @@ function getRandomReact() {
 }
 
 // =====================================================
-// ✅ MAIN CONNECT FUNCTION
+// MAIN CONNECT FUNCTION
 // =====================================================
 export async function connectToWA() {
-  // ------------------------
-  // Auth & Version
-  // ------------------------
+  console.log("Connecting WhatsApp bot 🧬...");
+
   const { state, saveCreds } = await useMongoDBAuthState(
     config.MONGODB_URI,
     config.DB_NAME
@@ -141,9 +53,6 @@ export async function connectToWA() {
 
   const { version } = await fetchLatestBaileysVersion();
 
-  // ------------------------
-  // Socket
-  // ------------------------
   const conn = makeWASocket({
     logger: P({ level: "silent" }),
     printQRInTerminal: false,
@@ -162,13 +71,14 @@ export async function connectToWA() {
   });
 
   // =====================================================
-  // ✅ CONNECTION HANDLER
+  // CONNECTION HANDLER
   // =====================================================
   conn.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && !pairingRequested) {
       pairingRequested = true;
+
       try {
         const code = await conn.requestPairingCode(number);
         console.log("🔗 Pairing Code:", code.slice(0, 4) + "-" + code.slice(4));
@@ -195,11 +105,11 @@ export async function connectToWA() {
       if (statusCode === 401) {
         console.log("⚠️ Auth failed. Re-login required.");
       } else if (statusCode !== DisconnectReason.loggedOut) {
+        console.log("🔄 Reconnecting in 3 seconds...");
         pairingRequested = false;
-        console.log("🔄 Reconnecting...");
         setTimeout(connectToWA, 3000);
       } else {
-        console.log("❌ Logged out.");
+        console.log("❌ Logged out from WhatsApp.");
       }
     }
   });
@@ -207,20 +117,23 @@ export async function connectToWA() {
   conn.ev.on("creds.update", saveCreds);
 
   // =====================================================
-  // ✅ MESSAGE HANDLER
+  // MESSAGE HANDLER
   // =====================================================
   conn.ev.on("messages.upsert", async ({ messages }) => {
     const mek = messages?.[0];
     if (!mek?.key || !mek?.message) return;
 
-    if (mek.key.fromMe) return;
+    // ✅ DO NOT block fromMe messages (fixes commands)
+    // if (mek.key.fromMe) return; ❌ NEVER enable for self bots
+
+    // Ignore reactions only
     if (mek.message.reactionMessage) return;
 
     const jid = mek.key.remoteJid;
     const sender = mek.key.participant || jid;
 
     // =====================================================
-    // ✅ STATUS AUTO REACTION
+    // STATUS AUTO REACTION
     // =====================================================
     if (jid === "status@broadcast") {
       try {
@@ -229,13 +142,12 @@ export async function connectToWA() {
           mek.message?.videoMessage ||
           mek.message?.extendedTextMessage
         ) {
-          // Read status
+          // mark as read
           await conn.readMessages([mek.key]);
 
-          // Delay = human behaviour
+          // human delay
           await new Promise((r) => setTimeout(r, 3000));
 
-          // Send random emoji reaction
           await conn.sendMessage(sender, {
             react: {
               text: getRandomReact(),
@@ -243,20 +155,17 @@ export async function connectToWA() {
             },
           });
         }
-      } catch {
-        // silent
-      }
-
+      } catch {}
       return;
     }
 
     // =====================================================
-    // ✅ NORMAL CHAT HANDLING
+    // NORMAL CHAT HANDLING (COMMANDS ✅)
     // =====================================================
     try {
       await handleMessage(conn, mek, config.OWNER_NUMBERS);
     } catch (err) {
-      console.log("[HANDLER ERROR]", err.message);
+      console.error("❌ [HANDLER ERROR]", err);
     }
   });
 
