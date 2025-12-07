@@ -14,7 +14,7 @@ function formatNumber(num) {
 export default {
   pattern: "tt",
   alias: ["tdl", "tiktokdl", "tiktok", "ttdl"],
-  category: "Owner",
+  category: "Download",
 
   async function(conn, mek, m, ctx) {
     const { q } = ctx;

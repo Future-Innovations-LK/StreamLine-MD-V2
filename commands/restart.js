@@ -1,6 +1,6 @@
 export default {
   pattern: "restart",
-  alias: ["reboot"],
+  alias: ["reboot", "res"],
   disc: "Restart the bot",
   category: "Owner",
   react: "🔁",
@@ -8,14 +8,17 @@ export default {
   async function(conn, mek, m, ctx) {
     const { isOwner } = ctx;
 
-    if (!isOwner)
-      return conn.sendMessage(
+    if (!isOwner) {
+      m.react("❌");
+      conn.sendMessage(
         ctx.from,
         {
-          text: "❌ This command is owner-only.",
+          text: "❌ only the owner can restart the bot.",
         },
         { quoted: mek }
       );
+      return;
+    }
 
     await conn.sendMessage(
       ctx.from,

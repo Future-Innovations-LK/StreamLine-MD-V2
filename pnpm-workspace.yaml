@@ -1,4 +1,6 @@
 onlyBuiltDependencies:
   - '@whiskeysockets/baileys'
+  - btch-downloader
+  - esbuild
   - protobufjs
   - sharp

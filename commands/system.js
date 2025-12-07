@@ -16,7 +16,7 @@ export default {
   pattern: "system",
   alias: ["sys", "status"],
   disc: "Show system info",
-  category: "Utilities",
+  category: "Main",
   react: "💻",
 
   async function(conn, mek, m, ctx) {

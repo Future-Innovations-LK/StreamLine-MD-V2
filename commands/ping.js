@@ -3,7 +3,7 @@ export default {
   pattern: "ping",
   alias: ["p"],
   disc: "Check bot speed",
-  category: "Utilities",
+  category: "Main",
   react: "⚡",
 
   async function(conn, mek, m, ctx) {

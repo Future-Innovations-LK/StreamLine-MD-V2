@@ -5,21 +5,39 @@ import { getBuffer, getGroupAdmins } from "./lib/functions.js";
 import axios from "axios";
 import config from "./config.js";
 import { loadAllCommands } from "./command.js";
+import { getReply } from "./lib/replyStore.js";
+import { getSettings } from "./lib/settings.js";
 
 export async function handleMessage(conn, mek, ownerNumbers = []) {
-  // make sure sms() is awaited (it probably normalizes the message)
+  // normalize message
   const m = await sms(conn, mek);
+
   const type = getContentType(mek.message);
   const from = mek.key.remoteJid;
 
-  // quoted message if exists
+  let cachedSettings = null;
+  let lastSettingsLoad = 0;
+
+  async function loadSettings() {
+    const now = Date.now();
+
+    // refresh every 5 seconds
+    if (!cachedSettings || now - lastSettingsLoad > 5000) {
+      cachedSettings = await getSettings();
+      lastSettingsLoad = now;
+    }
+
+    return cachedSettings;
+  }
+
+  // get quoted message if exists
   const quoted =
     type === "extendedTextMessage" &&
     mek.message.extendedTextMessage?.contextInfo
       ? mek.message.extendedTextMessage.contextInfo.quotedMessage || []
       : [];
 
-  // get the message body
+  // get message body
   const body =
     type === "conversation"
       ? mek.message.conversation
@@ -31,62 +49,64 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       ? mek.message.videoMessage.caption
       : "";
 
-  const prefix = config.PREFIX || ".";
+  const settings = await loadSettings();
+
+  const prefix = settings.prefix || config.PREFIX || ".";
   const isCmd = body.startsWith(prefix);
   const command = isCmd
     ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase()
     : "";
   const args = body.trim().split(/ +/).slice(1);
   const q = args.join(" ");
-  const isGroup = from && from.endsWith("@g.us");
+  const isGroup = from.endsWith("@g.us");
 
   // ---------------------------
-  // 🔑 Proper sender handling
+  // Sender Normalization
   // ---------------------------
   let rawSender;
-
   if (mek.key.fromMe) {
-    rawSender = conn.user.id; // bot itself
+    rawSender = conn.user.id;
   } else if (mek.key.participantAlt) {
-    rawSender = mek.key.participantAlt; // real number if available
+    rawSender = mek.key.participantAlt;
   } else {
-    rawSender = mek.key.participant || mek.key.remoteJid; // fallback
+    rawSender = mek.key.participant || mek.key.remoteJid;
   }
 
-  // normalize sender JID to a consistent format
-  const sender = jidNormalizedUser(rawSender); // e.g. "9471xxxxx@s.whatsapp.net"
-  const senderNumber = sender.split("@")[0]; // always real number
+  const sender = jidNormalizedUser(rawSender);
+  const senderNumber = sender.split("@")[0];
 
   const botNumber = conn.user.id.split(":")[0];
-  const pushname = mek.pushName || "Sin Nombre";
+  const pushname = mek.pushName || "Unknown";
+
   const isMe = botNumber.includes(senderNumber);
   const isOwner = ownerNumbers.includes(senderNumber) || isMe;
 
   // ---------------------------
-  // Group metadata
+  // Group info
   // ---------------------------
   const groupMetadata = isGroup
     ? await conn.groupMetadata(from).catch(() => null)
     : null;
+
   const groupName = groupMetadata?.subject || "";
   const participants = groupMetadata?.participants || [];
-  const groupJid = isGroup ? groupMetadata?.id || "" : "";
+  const groupJid = groupMetadata?.id || "";
 
-  // normalize admin list (getGroupAdmins returns normalized jids)
   const groupAdmins = isGroup ? await getGroupAdmins(participants) : [];
-  const botJid = jidNormalizedUser(conn.user.id); // normalized bot JID
+  const botJid = jidNormalizedUser(conn.user.id);
+
   const isBotAdmins = groupAdmins.includes(botJid);
   const isAdmins = groupAdmins.includes(sender);
 
   // ---------------------------
   // Reply helper
   // ---------------------------
-  const reply = (teks) => {
-    conn.sendMessage(from, { text: teks }, { quoted: mek });
+  const reply = (text) => {
+    conn.sendMessage(from, { text }, { quoted: mek });
   };
 
   // ---------------------------
-  // Media sender helper
+  // File sender helper
   // ---------------------------
   conn.sendFileUrl = async (
     jid,
@@ -95,10 +115,9 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     quotedMsg = null,
     options = {}
   ) => {
-    // safer content-type parsing (strip charset)
     const head = await axios.head(url).catch(() => null);
-    if (!head || !head.headers || !head.headers["content-type"]) {
-      // fallback: try to fetch as buffer and send as document
+
+    if (!head?.headers?.["content-type"]) {
       const buf = await getBuffer(url);
       return conn.sendMessage(
         jid,
@@ -106,12 +125,13 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
         { quoted: quotedMsg }
       );
     }
-    const contentType = head.headers["content-type"].split(";")[0].trim(); // e.g. "image/gif"
-    const [type, subtype] = contentType.split("/");
+
+    const contentType = head.headers["content-type"];
+    const [type] = contentType.split("/");
 
     const buf = await getBuffer(url);
 
-    if (contentType === "image/gif" || subtype === "gif") {
+    if (contentType === "image/gif") {
       return conn.sendMessage(
         jid,
         {
@@ -121,15 +141,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
           mimetype: "video/mp4",
           ...options,
         },
-        { quoted: quotedMsg, ...options }
-      );
-    }
-
-    if (contentType === "application/pdf") {
-      return conn.sendMessage(
-        jid,
-        { document: buf, mimetype: "application/pdf", caption, ...options },
-        { quoted: quotedMsg, ...options }
+        { quoted: quotedMsg }
       );
     }
 
@@ -137,7 +149,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { image: buf, caption, ...options },
-        { quoted: quotedMsg, ...options }
+        { quoted: quotedMsg }
       );
     }
 
@@ -145,7 +157,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { video: buf, caption, mimetype: contentType, ...options },
-        { quoted: quotedMsg, ...options }
+        { quoted: quotedMsg }
       );
     }
 
@@ -153,61 +165,94 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { audio: buf, caption, mimetype: contentType, ...options },
-        { quoted: quotedMsg, ...options }
+        { quoted: quotedMsg }
       );
     }
 
-    // default: send as document
     return conn.sendMessage(
       jid,
       { document: buf, caption, mimetype: contentType, ...options },
-      { quoted: quotedMsg, ...options }
+      { quoted: quotedMsg }
     );
   };
 
-  // ---------------------------
-  // Load and handle commands
-  // ---------------------------
+  // ====================================================
+  // ✅ REPLY LISTENER HANDLING (NEW)
+  // ====================================================
+
+  const stanzaId = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
+
+  if (stanzaId) {
+    const replyData = getReply(stanzaId);
+
+    if (replyData?.onReply) {
+      try {
+        await replyData.onReply(body.trim(), {
+          conn,
+          mek,
+          m,
+          from,
+          sender,
+          senderNumber,
+          isOwner,
+          reply,
+        });
+      } catch (err) {
+        console.error("[REPLY HANDLER ERROR]", err);
+      }
+
+      // ⛔ stop normal command processing
+      return;
+    }
+  }
+
+  // ====================================================
+  // ✅ NORMAL COMMAND HANDLING
+  // ====================================================
+  if (!isCmd) return;
+
   const commands = await loadAllCommands();
 
-  if (isCmd) {
-    const cmdObj =
-      commands.find((c) => c.pattern === command) ||
-      commands.find((c) => c.alias?.includes(command));
-    if (cmdObj) {
-      if (cmdObj.react)
-        await conn.sendMessage(from, {
-          react: { text: cmdObj.react, key: mek.key },
-        });
-      try {
-        await cmdObj.function(conn, mek, m, {
-          from,
-          quoted,
-          body,
-          isCmd,
-          command,
-          args,
-          q,
-          isGroup,
-          sender,
-          senderNumber, // ✅ always real number now
-          botNumber,
-          botJid,
-          pushname,
-          isMe,
-          isOwner,
-          groupMetadata,
-          groupName,
-          participants,
-          groupAdmins,
-          isBotAdmins,
-          isAdmins,
-          reply,
-          groupJid,
-        });
-      } catch (e) {
-        console.error("[PLUGIN ERROR]", e);
-      }
-    }
+  const cmd =
+    commands.find((c) => c.pattern === command) ||
+    commands.find((c) => c.alias?.includes(command));
+
+  if (!cmd) return;
+
+  // react to command
+  if (cmd.react) {
+    await conn.sendMessage(from, {
+      react: { text: cmd.react, key: mek.key },
+    });
+  }
+
+  try {
+    await cmd.function(conn, mek, m, {
+      from,
+      quoted,
+      body,
+      isCmd,
+      command,
+      args,
+      q,
+      isGroup,
+      sender,
+      senderNumber,
+      botNumber,
+      botJid,
+      pushname,
+      isMe,
+      isOwner,
+      groupMetadata,
+      groupName,
+      participants,
+      groupAdmins,
+      isBotAdmins,
+      isAdmins,
+      reply,
+      groupJid,
+    });
+  } catch (e) {
+    console.error("[PLUGIN ERROR]", e);
   }
 }

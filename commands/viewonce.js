@@ -4,7 +4,7 @@ import { downloadMediaMessage, sms } from "../lib/msg.js";
 export default {
   pattern: "vv",
   alias: ["viewonce"],
-  category: "Utilities",
+  category: "Tools",
   react: "🫣",
 
   async function(conn, mek, m, ctx) {

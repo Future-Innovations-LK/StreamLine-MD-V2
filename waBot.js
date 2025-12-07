@@ -5,6 +5,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
 } from "@whiskeysockets/baileys";
+
 import P from "pino";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -13,27 +14,136 @@ import { loadPlugins } from "./lib/loader.js";
 import { useMongoDBAuthState } from "./lib/auth/mongoAuth.js";
 import config from "./config.js";
 import { handleMessage } from "./messageHandler.js";
+import { getSettings } from "./lib/settings.js";
+import { handleBootCommand } from "./lib/bootHandler.js"; // boot command handler
 
 // =====================================================
-// PATH SETUP
+// FILE PATH
 // =====================================================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const number = config.BOT_NUMBER;
 
 let plugins = {};
 let pairingRequested = false;
 
 // =====================================================
-// MASSIVE EMOJI POOL
+// SETTINGS CACHE
+// =====================================================
+let cachedSettings = null;
+let lastSettingsLoad = 0;
+
+async function loadSettings() {
+  const now = Date.now();
+
+  // refresh every 5 seconds
+  if (!cachedSettings || now - lastSettingsLoad > 5000) {
+    cachedSettings = await getSettings();
+    lastSettingsLoad = now;
+  }
+
+  return cachedSettings;
+}
+
+// =====================================================
+// EMOJI POOL
 // =====================================================
 const STATUS_REACTS = [
-  "❤️","💙","💚","💛","💜","🧡","🩷","🩵","🤍","🤎","💖","💘","💝","💗","💓","💞","💟",
-  "😍","🥰","😘","🔥","💯","✨","⚡","🌟","🫶","🙌","👏","😎","🤯","😮","🤩","🤝","👌","👍",
-  "💥","🎉","🕺","💃","😂","🤣","😹","😆","😄","😁","😅","😊","🙂","😸","😜","🤪","🤭",
-  "👀","😳","😱","🤔","😏","😌","😴","🥹","😋","😶‍🌫️","😐","😑","🙃","😬","🫣","🤗",
-  "🌈","🌸","🌼","🌻","🍀","🎨","📸","🎬","🎧","🎶","🍿","☕","🛸","🚀","🐾","🦋",
-  "😈","👻","💀","🤡","💩","👽","🫠","🫥","🤖","🎯",
+  "❤️",
+  "💙",
+  "💚",
+  "💛",
+  "💜",
+  "🧡",
+  "🩷",
+  "🩵",
+  "🤍",
+  "🤎",
+  "💖",
+  "💘",
+  "💝",
+  "💗",
+  "💓",
+  "💞",
+  "💟",
+  "😍",
+  "🥰",
+  "😘",
+  "🔥",
+  "💯",
+  "✨",
+  "⚡",
+  "🌟",
+  "🫶",
+  "🙌",
+  "👏",
+  "😎",
+  "🤯",
+  "😮",
+  "🤩",
+  "🤝",
+  "👌",
+  "👍",
+  "💥",
+  "🎉",
+  "🕺",
+  "💃",
+  "😂",
+  "🤣",
+  "😹",
+  "😆",
+  "😄",
+  "😁",
+  "😅",
+  "😊",
+  "🙂",
+  "😸",
+  "😜",
+  "🤪",
+  "🤭",
+  "👀",
+  "😳",
+  "😱",
+  "🤔",
+  "😏",
+  "😌",
+  "😴",
+  "🥹",
+  "😋",
+  "😶‍🌫️",
+  "😐",
+  "😑",
+  "🙃",
+  "😬",
+  "🫣",
+  "🤗",
+  "🌈",
+  "🌸",
+  "🌼",
+  "🌻",
+  "🍀",
+  "🎨",
+  "📸",
+  "🎬",
+  "🎧",
+  "🎶",
+  "🍿",
+  "☕",
+  "🛸",
+  "🚀",
+  "🐾",
+  "🦋",
+  "😈",
+  "👻",
+  "💀",
+  "🤡",
+  "💩",
+  "👽",
+  "🫠",
+  "🫥",
+  "🤖",
+  "🎯",
 ];
 
 function getRandomReact() {
@@ -41,10 +151,10 @@ function getRandomReact() {
 }
 
 // =====================================================
-// MAIN CONNECT FUNCTION
+// WA CONNECTOR
 // =====================================================
 export async function connectToWA() {
-  console.log("Connecting WhatsApp bot 🧬...");
+  console.log("🧬 Connecting WhatsApp bot...");
 
   const { state, saveCreds } = await useMongoDBAuthState(
     config.MONGODB_URI,
@@ -57,8 +167,8 @@ export async function connectToWA() {
     logger: P({ level: "silent" }),
     printQRInTerminal: false,
     browser: Browsers.ubuntu("Chrome"),
-    syncFullHistory: false,
     markOnlineOnConnect: true,
+    syncFullHistory: false,
 
     auth: {
       creds: state.creds,
@@ -71,14 +181,13 @@ export async function connectToWA() {
   });
 
   // =====================================================
-  // CONNECTION HANDLER
+  // CONNECTION LISTENER
   // =====================================================
   conn.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && !pairingRequested) {
       pairingRequested = true;
-
       try {
         const code = await conn.requestPairingCode(number);
         console.log("🔗 Pairing Code:", code.slice(0, 4) + "-" + code.slice(4));
@@ -100,16 +209,16 @@ export async function connectToWA() {
     }
 
     if (connection === "close") {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const code = lastDisconnect?.error?.output?.statusCode;
 
-      if (statusCode === 401) {
-        console.log("⚠️ Auth failed. Re-login required.");
-      } else if (statusCode !== DisconnectReason.loggedOut) {
+      if (code === 401) {
+        console.log("⚠️ Auth failed — login again.");
+      } else if (code !== DisconnectReason.loggedOut) {
         console.log("🔄 Reconnecting in 3 seconds...");
         pairingRequested = false;
         setTimeout(connectToWA, 3000);
       } else {
-        console.log("❌ Logged out from WhatsApp.");
+        console.log("❌ Logged out of WhatsApp.");
       }
     }
   });
@@ -121,46 +230,46 @@ export async function connectToWA() {
   // =====================================================
   conn.ev.on("messages.upsert", async ({ messages }) => {
     const mek = messages?.[0];
-    if (!mek?.key || !mek?.message) return;
+    if (!mek?.message) return;
 
-    // ✅ DO NOT block fromMe messages (fixes commands)
-    // if (mek.key.fromMe) return; ❌ NEVER enable for self bots
-
-    // Ignore reactions only
     if (mek.message.reactionMessage) return;
 
     const jid = mek.key.remoteJid;
     const sender = mek.key.participant || jid;
 
     // =====================================================
-    // STATUS AUTO REACTION
+    // CHECK BOT ENABLE FLAG (KILL SWITCH)
+    // =====================================================
+    const settings = await loadSettings();
+    if (!settings.botEnabled) {
+      // Only allow boot command
+      const handled = await handleBootCommand(conn, mek);
+      if (handled) return; // stop further processing
+      return; // ignore all other commands
+    }
+
+    // =====================================================
+    // STATUS HANDLING (RESPECTS SETTINGS)
     // =====================================================
     if (jid === "status@broadcast") {
       try {
-        if (
-          mek.message?.imageMessage ||
-          mek.message?.videoMessage ||
-          mek.message?.extendedTextMessage
-        ) {
-          // mark as read
-          await conn.readMessages([mek.key]);
-
-          // human delay
-          await new Promise((r) => setTimeout(r, 3000));
-
+        if (settings.autoReadStatus) await conn.readMessages([mek.key]);
+        if (settings.autoReactStatus) {
+          await new Promise((r) =>
+            setTimeout(r, settings.reactDelayMs || 3000)
+          );
           await conn.sendMessage(sender, {
-            react: {
-              text: getRandomReact(),
-              key: mek.key,
-            },
+            react: { text: getRandomReact(), key: mek.key },
           });
         }
-      } catch {}
+      } catch (err) {
+        console.error("❌ [STATUS ERROR]", err);
+      }
       return;
     }
 
     // =====================================================
-    // NORMAL CHAT HANDLING (COMMANDS ✅)
+    // NORMAL COMMAND HANDLING
     // =====================================================
     try {
       await handleMessage(conn, mek, config.OWNER_NUMBERS);
