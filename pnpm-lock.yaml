@@ -35,12 +35,18 @@ importers:
       figlet:
         specifier: ^1.9.4
         version: 1.9.4
+      form-data:
+        specifier: ^4.0.5
+        version: 4.0.5
       mongodb:
         specifier: ^7.0.0
         version: 7.0.0(socks@2.8.7)
       node-cache:
         specifier: ^5.1.2
         version: 5.1.2
+      node-fetch:
+        specifier: ^3.3.2
+        version: 3.3.2
       pino:
         specifier: ^10.1.0
         version: 10.1.0

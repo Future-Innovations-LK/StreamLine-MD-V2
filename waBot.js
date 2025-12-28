@@ -237,6 +237,8 @@ export async function connectToWA() {
     const jid = mek.key.remoteJid;
     const sender = mek.key.participant || jid;
 
+    console.log(mek);
+
     // =====================================================
     // CHECK BOT ENABLE FLAG (KILL SWITCH)
     // =====================================================
