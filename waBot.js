@@ -226,6 +226,32 @@ export async function connectToWA() {
   conn.ev.on("creds.update", saveCreds);
 
   // =====================================================
+  // CALL HANDLER (ANTI-CALL)
+  // =====================================================
+  conn.ev.on("call", async (callEvents) => {
+    const settings = await loadSettings();
+
+    // If feature is disabled, do nothing
+    if (!settings.autoRejectCalls) return;
+
+    for (const call of callEvents) {
+      if (call.status === "offer") {
+        try {
+          await conn.rejectCall(call.id, call.from);
+
+          await conn.sendMessage(call.from, {
+            text: "⚠️ Calls are not allowed.\nPlease send a text message instead.",
+          });
+
+          console.log("🚫 Call rejected from:", call.from);
+        } catch (err) {
+          console.error("❌ [CALL HANDLER ERROR]", err);
+        }
+      }
+    }
+  });
+
+  // =====================================================
   // MESSAGE HANDLER
   // =====================================================
   conn.ev.on("messages.upsert", async ({ messages }) => {

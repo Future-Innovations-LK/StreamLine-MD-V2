@@ -1,7 +1,12 @@
 import { getSettings, updateSettings } from "../lib/settings.js";
 import { registerReply } from "../lib/replyStore.js";
 
-const SETTING_KEYS = ["autoReadStatus", "autoReactStatus", "prefix"];
+const SETTING_KEYS = [
+  "autoReadStatus",
+  "autoReactStatus",
+  "prefix",
+  "autoRejectCalls",
+];
 
 function formatSettings(settings) {
   return SETTING_KEYS.map((key, i) => {
