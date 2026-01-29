@@ -60,26 +60,34 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   const q = args.join(" ");
   const isGroup = from.endsWith("@g.us");
 
-  // ---------------------------
-  // Sender Normalization
-  // ---------------------------
-  let rawSender;
-  if (mek.key.fromMe) {
-    rawSender = conn.user.id;
-  } else if (mek.key.participantAlt) {
-    rawSender = mek.key.participantAlt;
-  } else {
-    rawSender = mek.key.participant || mek.key.remoteJid;
-  }
+// ---------------------------
+// Sender Normalization (SOLID)
+// ---------------------------
+const botJid = jidNormalizedUser(conn.user.id);
+const botNumber = botJid.split("@")[0];
 
-  const sender = jidNormalizedUser(rawSender);
-  const senderNumber = sender.split("@")[0];
+let rawSender;
 
-  const botNumber = conn.user.id.split(":")[0];
-  const pushname = mek.pushName || "Unknown";
+if (mek.key.fromMe) {
+  rawSender = botJid;
+} else if (mek.key.participantAlt) {
+  // groups (new bailey format)
+  rawSender = mek.key.participantAlt;
+} else if (mek.key.participant && mek.key.participant.length > 0) {
+  // classic groups
+  rawSender = mek.key.participant;
+} else if (mek.key.remoteJidAlt) {
+  // ✅ PRIVATE CHAT — ALWAYS USE THIS
+  rawSender = mek.key.remoteJidAlt;
+} else {
+  rawSender = mek.key.remoteJid;
+}
 
-  const isMe = botNumber.includes(senderNumber);
-  const isOwner = ownerNumbers.includes(senderNumber) || isMe;
+const sender = jidNormalizedUser(rawSender);
+const senderNumber = sender.split("@")[0];
+
+const isMe = senderNumber === botNumber;
+const isOwner = ownerNumbers.includes(senderNumber) || isMe;
 
   // ---------------------------
   // Group info
