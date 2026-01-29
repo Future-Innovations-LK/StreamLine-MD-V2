@@ -13,10 +13,8 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   const m = await sms(conn, mek);
 
   const type = getContentType(mek.message);
+  const from = mek.key.remoteJid;
 
-  // ---------------------------
-  // Settings cache
-  // ---------------------------
   let cachedSettings = null;
   let lastSettingsLoad = 0;
 
@@ -32,77 +30,14 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     return cachedSettings;
   }
 
-  // ---------------------------
-  // Helpers (Search All + Match)
-  // ---------------------------
-  function normalizeOwnerList(list = []) {
-    // keep digits only (removes +, spaces, etc)
-    return list
-      .map((x) => String(x || "").replace(/[^\d]/g, ""))
-      .filter(Boolean);
-  }
-
-  function extractNumbersFromKey(mek, conn) {
-    const possibles = [
-      mek?.key?.participantAlt,
-      mek?.key?.participant,
-      mek?.key?.remoteJid,
-      mek?.key?.remoteJidAlt,
-      conn?.user?.id,
-    ].filter(Boolean);
-
-    const numbers = new Set();
-
-    for (const jid of possibles) {
-      try {
-        const norm = jidNormalizedUser(jid);
-        const num = norm.split("@")[0];
-        if (/^\d+$/.test(num)) numbers.add(num);
-      } catch {}
-    }
-
-    return [...numbers];
-  }
-
-  const botJid = jidNormalizedUser(conn.user.id);
-  const botNumber = botJid.split("@")[0];
-
-  const foundNumbers = extractNumbersFromKey(mek, conn);
-
-  // pick sender number (prefer not-bot)
-  const senderNumber =
-    foundNumbers.find((n) => n !== botNumber) || foundNumbers[0] || botNumber;
-
-  const sender = `${senderNumber}@s.whatsapp.net`;
-
-  const cleanedOwners = normalizeOwnerList(ownerNumbers);
-
-  const isMe = foundNumbers.includes(botNumber);
-
-  // ✅ owner = any overlap between foundNumbers and ownerNumbers
-  const isOwner = isMe || cleanedOwners.some((own) => foundNumbers.includes(own));
-
-  // ---------------------------
-  // "from" (reply target)
-  // ---------------------------
-  const rawFrom = mek.key.remoteJid;
-  const isGroup = rawFrom?.endsWith("@g.us");
-
-  // if group, from must be group jid. if private, send to sender jid
-  const from = isGroup ? rawFrom : sender;
-
-  // ---------------------------
   // get quoted message if exists
-  // ---------------------------
   const quoted =
     type === "extendedTextMessage" &&
     mek.message.extendedTextMessage?.contextInfo
       ? mek.message.extendedTextMessage.contextInfo.quotedMessage || []
       : [];
 
-  // ---------------------------
   // get message body
-  // ---------------------------
   const body =
     type === "conversation"
       ? mek.message.conversation
@@ -123,8 +58,28 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     : "";
   const args = body.trim().split(/ +/).slice(1);
   const q = args.join(" ");
+  const isGroup = from.endsWith("@g.us");
 
+  // ---------------------------
+  // Sender Normalization
+  // ---------------------------
+  let rawSender;
+  if (mek.key.fromMe) {
+    rawSender = conn.user.id;
+  } else if (mek.key.participantAlt) {
+    rawSender = mek.key.participantAlt;
+  } else {
+    rawSender = mek.key.participant || mek.key.remoteJid;
+  }
+
+  const sender = jidNormalizedUser(rawSender);
+  const senderNumber = sender.split("@")[0];
+
+  const botNumber = conn.user.id.split(":")[0];
   const pushname = mek.pushName || "Unknown";
+
+  const isMe = botNumber.includes(senderNumber);
+  const isOwner = ownerNumbers.includes(senderNumber) || isMe;
 
   // ---------------------------
   // Group info
@@ -138,6 +93,8 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   const groupJid = groupMetadata?.id || "";
 
   const groupAdmins = isGroup ? await getGroupAdmins(participants) : [];
+  const botJid = jidNormalizedUser(conn.user.id);
+
   const isBotAdmins = groupAdmins.includes(botJid);
   const isAdmins = groupAdmins.includes(sender);
 
@@ -170,7 +127,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     }
 
     const contentType = head.headers["content-type"];
-    const [mainType] = contentType.split("/");
+    const [type] = contentType.split("/");
 
     const buf = await getBuffer(url);
 
@@ -188,7 +145,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       );
     }
 
-    if (mainType === "image") {
+    if (type === "image") {
       return conn.sendMessage(
         jid,
         { image: buf, caption, ...options },
@@ -196,7 +153,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       );
     }
 
-    if (mainType === "video") {
+    if (type === "video") {
       return conn.sendMessage(
         jid,
         { video: buf, caption, mimetype: contentType, ...options },
@@ -204,7 +161,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       );
     }
 
-    if (mainType === "audio") {
+    if (type === "audio") {
       return conn.sendMessage(
         jid,
         { audio: buf, caption, mimetype: contentType, ...options },
@@ -220,8 +177,9 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   };
 
   // ====================================================
-  // ✅ REPLY LISTENER HANDLING
+  // ✅ REPLY LISTENER HANDLING (NEW)
   // ====================================================
+
   const stanzaId = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
   if (stanzaId) {
