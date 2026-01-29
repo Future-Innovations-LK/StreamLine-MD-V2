@@ -60,34 +60,36 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   const q = args.join(" ");
   const isGroup = from.endsWith("@g.us");
 
-// ---------------------------
-// Sender Normalization (SOLID)
-// ---------------------------
-const botJid = jidNormalizedUser(conn.user.id);
-const botNumber = botJid.split("@")[0];
+  // ---------------------------
+  // Sender Normalization (SOLID + LID FIX)
+  // ---------------------------
+  const botJid = jidNormalizedUser(conn.user.id);
+  const botNumber = botJid.split("@")[0];
 
-let rawSender;
+  let rawSender;
 
-if (mek.key.fromMe) {
-  rawSender = botJid;
-} else if (mek.key.participantAlt) {
-  // groups (new bailey format)
-  rawSender = mek.key.participantAlt;
-} else if (mek.key.participant && mek.key.participant.length > 0) {
-  // classic groups
-  rawSender = mek.key.participant;
-} else if (mek.key.remoteJidAlt) {
-  // ✅ PRIVATE CHAT — ALWAYS USE THIS
-  rawSender = mek.key.remoteJidAlt;
-} else {
-  rawSender = mek.key.remoteJid;
-}
+  if (mek.key.fromMe) {
+    rawSender = botJid;
+  } else if (mek.key.participantAlt) {
+    // groups (new bailey format)
+    rawSender = mek.key.participantAlt;
+  } else if (mek.key.participant && mek.key.participant.length > 0) {
+    // classic groups
+    rawSender = mek.key.participant;
+  } else if (mek.key.remoteJidAlt) {
+    // ✅ PRIVATE CHAT — ALWAYS USE THIS when remoteJid is @lid
+    rawSender = mek.key.remoteJidAlt;
+  } else {
+    rawSender = mek.key.remoteJid;
+  }
 
-const sender = jidNormalizedUser(rawSender);
-const senderNumber = sender.split("@")[0];
+  const sender = jidNormalizedUser(rawSender);
+  const senderNumber = sender.split("@")[0];
 
-const isMe = senderNumber === botNumber;
-const isOwner = ownerNumbers.includes(senderNumber) || isMe;
+  const isMe = senderNumber === botNumber;
+  const isOwner = ownerNumbers.includes(senderNumber) || isMe;
+
+  const pushname = mek.pushName || "Unknown";
 
   // ---------------------------
   // Group info
@@ -101,8 +103,8 @@ const isOwner = ownerNumbers.includes(senderNumber) || isMe;
   const groupJid = groupMetadata?.id || "";
 
   const groupAdmins = isGroup ? await getGroupAdmins(participants) : [];
-  const botJid = jidNormalizedUser(conn.user.id);
 
+  // ✅ DO NOT redeclare botJid here (fixed)
   const isBotAdmins = groupAdmins.includes(botJid);
   const isAdmins = groupAdmins.includes(sender);
 
@@ -135,7 +137,7 @@ const isOwner = ownerNumbers.includes(senderNumber) || isMe;
     }
 
     const contentType = head.headers["content-type"];
-    const [type] = contentType.split("/");
+    const [mainType] = contentType.split("/");
 
     const buf = await getBuffer(url);
 
@@ -153,7 +155,7 @@ const isOwner = ownerNumbers.includes(senderNumber) || isMe;
       );
     }
 
-    if (type === "image") {
+    if (mainType === "image") {
       return conn.sendMessage(
         jid,
         { image: buf, caption, ...options },
@@ -161,7 +163,7 @@ const isOwner = ownerNumbers.includes(senderNumber) || isMe;
       );
     }
 
-    if (type === "video") {
+    if (mainType === "video") {
       return conn.sendMessage(
         jid,
         { video: buf, caption, mimetype: contentType, ...options },
@@ -169,7 +171,7 @@ const isOwner = ownerNumbers.includes(senderNumber) || isMe;
       );
     }
 
-    if (type === "audio") {
+    if (mainType === "audio") {
       return conn.sendMessage(
         jid,
         { audio: buf, caption, mimetype: contentType, ...options },
@@ -187,7 +189,6 @@ const isOwner = ownerNumbers.includes(senderNumber) || isMe;
   // ====================================================
   // ✅ REPLY LISTENER HANDLING (NEW)
   // ====================================================
-
   const stanzaId = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
   if (stanzaId) {
