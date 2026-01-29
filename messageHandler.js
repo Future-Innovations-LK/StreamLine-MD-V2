@@ -13,8 +13,10 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   const m = await sms(conn, mek);
 
   const type = getContentType(mek.message);
-  const from = mek.key.remoteJid;
 
+  // ---------------------------
+  // Settings cache
+  // ---------------------------
   let cachedSettings = null;
   let lastSettingsLoad = 0;
 
@@ -30,14 +32,77 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     return cachedSettings;
   }
 
+  // ---------------------------
+  // Helpers (Search All + Match)
+  // ---------------------------
+  function normalizeOwnerList(list = []) {
+    // keep digits only (removes +, spaces, etc)
+    return list
+      .map((x) => String(x || "").replace(/[^\d]/g, ""))
+      .filter(Boolean);
+  }
+
+  function extractNumbersFromKey(mek, conn) {
+    const possibles = [
+      mek?.key?.participantAlt,
+      mek?.key?.participant,
+      mek?.key?.remoteJid,
+      mek?.key?.remoteJidAlt,
+      conn?.user?.id,
+    ].filter(Boolean);
+
+    const numbers = new Set();
+
+    for (const jid of possibles) {
+      try {
+        const norm = jidNormalizedUser(jid);
+        const num = norm.split("@")[0];
+        if (/^\d+$/.test(num)) numbers.add(num);
+      } catch {}
+    }
+
+    return [...numbers];
+  }
+
+  const botJid = jidNormalizedUser(conn.user.id);
+  const botNumber = botJid.split("@")[0];
+
+  const foundNumbers = extractNumbersFromKey(mek, conn);
+
+  // pick sender number (prefer not-bot)
+  const senderNumber =
+    foundNumbers.find((n) => n !== botNumber) || foundNumbers[0] || botNumber;
+
+  const sender = `${senderNumber}@s.whatsapp.net`;
+
+  const cleanedOwners = normalizeOwnerList(ownerNumbers);
+
+  const isMe = foundNumbers.includes(botNumber);
+
+  // ✅ owner = any overlap between foundNumbers and ownerNumbers
+  const isOwner = isMe || cleanedOwners.some((own) => foundNumbers.includes(own));
+
+  // ---------------------------
+  // "from" (reply target)
+  // ---------------------------
+  const rawFrom = mek.key.remoteJid;
+  const isGroup = rawFrom?.endsWith("@g.us");
+
+  // if group, from must be group jid. if private, send to sender jid
+  const from = isGroup ? rawFrom : sender;
+
+  // ---------------------------
   // get quoted message if exists
+  // ---------------------------
   const quoted =
     type === "extendedTextMessage" &&
     mek.message.extendedTextMessage?.contextInfo
       ? mek.message.extendedTextMessage.contextInfo.quotedMessage || []
       : [];
 
+  // ---------------------------
   // get message body
+  // ---------------------------
   const body =
     type === "conversation"
       ? mek.message.conversation
@@ -58,36 +123,6 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     : "";
   const args = body.trim().split(/ +/).slice(1);
   const q = args.join(" ");
-  const isGroup = from.endsWith("@g.us");
-
-  // ---------------------------
-  // Sender Normalization (SOLID + LID FIX)
-  // ---------------------------
-  const botJid = jidNormalizedUser(conn.user.id);
-  const botNumber = botJid.split("@")[0];
-
-  let rawSender;
-
-  if (mek.key.fromMe) {
-    rawSender = botJid;
-  } else if (mek.key.participantAlt) {
-    // groups (new bailey format)
-    rawSender = mek.key.participantAlt;
-  } else if (mek.key.participant && mek.key.participant.length > 0) {
-    // classic groups
-    rawSender = mek.key.participant;
-  } else if (mek.key.remoteJidAlt) {
-    // ✅ PRIVATE CHAT — ALWAYS USE THIS when remoteJid is @lid
-    rawSender = mek.key.remoteJidAlt;
-  } else {
-    rawSender = mek.key.remoteJid;
-  }
-
-  const sender = jidNormalizedUser(rawSender);
-  const senderNumber = sender.split("@")[0];
-
-  const isMe = senderNumber === botNumber;
-  const isOwner = ownerNumbers.includes(senderNumber) || isMe;
 
   const pushname = mek.pushName || "Unknown";
 
@@ -103,8 +138,6 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   const groupJid = groupMetadata?.id || "";
 
   const groupAdmins = isGroup ? await getGroupAdmins(participants) : [];
-
-  // ✅ DO NOT redeclare botJid here (fixed)
   const isBotAdmins = groupAdmins.includes(botJid);
   const isAdmins = groupAdmins.includes(sender);
 
@@ -187,7 +220,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   };
 
   // ====================================================
-  // ✅ REPLY LISTENER HANDLING (NEW)
+  // ✅ REPLY LISTENER HANDLING
   // ====================================================
   const stanzaId = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
