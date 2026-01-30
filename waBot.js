@@ -158,7 +158,7 @@ export async function connectToWA() {
 
   const { state, saveCreds } = await useMongoDBAuthState(
     config.MONGODB_URI,
-    config.DB_NAME
+    config.DB_NAME,
   );
 
   const { version } = await fetchLatestBaileysVersion();
@@ -234,19 +234,53 @@ export async function connectToWA() {
     // If feature is disabled, do nothing
     if (!settings.autoRejectCalls) return;
 
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const randomInt = (min, max) =>
+      Math.floor(Math.random() * (max - min + 1)) + min;
+
+    // Best-effort pushName lookup (depends on how your bot stores contacts)
+    const getPushName = (jid) => {
+      const contact =
+        // some setups attach a Map-like contacts store
+        conn?.contacts?.[jid] ||
+        conn?.contacts?.get?.(jid) ||
+        // common Baileys store pattern
+        conn?.store?.contacts?.[jid] ||
+        conn?.store?.contacts?.get?.(jid);
+
+      return contact?.notify || contact?.name || contact?.verifiedName || null;
+    };
+
     for (const call of callEvents) {
-      if (call.status === "offer") {
-        try {
-          await conn.rejectCall(call.id, call.from);
+      if (call.status !== "offer") continue;
 
-          await conn.sendMessage(call.from, {
-            text: "⚠️ Calls are not allowed.\nPlease send a text message instead.",
-          });
+      const jid = call.from;
+      const name = getPushName(jid) || "bestie"; // cute fallback 😭
 
-          console.log("🚫 Call rejected from:", call.from);
-        } catch (err) {
-          console.error("❌ [CALL HANDLER ERROR]", err);
-        }
+      // wait 1s to 4s before declining (but message goes first)
+      const delayMs = randomInt(1000, 4000);
+
+      const brandLine = "⚡ 𝘚𝘛𝘙𝘌𝘈𝘔 𝘓𝘐𝘕𝘌 𝘔𝐃 (𝘝2) ⚡";
+      const cuteMsg =
+        `${brandLine}\n\n` +
+        `Hey ${name} ✨\n` +
+        `Calls aren’t supported right now 😿\n` +
+        `But you can totally drop me a text and I’ll reply super fast 💬⚡\n\n` +
+        `Thanks for understanding 🫶`;
+
+      try {
+        // 1) send message first
+        await conn.sendMessage(jid, { text: cuteMsg });
+
+        // 2) then wait a random time
+        await sleep(delayMs);
+
+        // 3) then reject the call
+        await conn.rejectCall(call.id, jid);
+
+        console.log(`🚫 Call rejected from: ${jid} (delay ${delayMs}ms)`);
+      } catch (err) {
+        console.error("❌ [CALL HANDLER ERROR]", err);
       }
     }
   });
@@ -284,7 +318,7 @@ export async function connectToWA() {
         if (settings.autoReadStatus) await conn.readMessages([mek.key]);
         if (settings.autoReactStatus) {
           await new Promise((r) =>
-            setTimeout(r, settings.reactDelayMs || 3000)
+            setTimeout(r, settings.reactDelayMs || 3000),
           );
           await conn.sendMessage(sender, {
             react: { text: getRandomReact(), key: mek.key },
