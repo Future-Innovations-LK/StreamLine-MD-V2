@@ -5,8 +5,10 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --watch index.js",
-    "start": "pm2-runtime index.js --name StreamLineMD-V2"
+    "dev": "nodemon --watch . --ext js,mjs,cjs,json --ignore node_modules index.js",
+    "start": "pm2 start index.js --deep-monitoring --attach --name StreamLineMD-V2",
+    "stop": "pm2 stop StreamLineMD-V2",
+    "restart": "pm2 restart StreamLineMD-V2"
   },
   "keywords": [],
   "author": "Future Innovations LK",
