@@ -7,17 +7,19 @@ function safeReact(ctx, emoji) {
   } catch {}
 }
 
-function unwrapViewOnceMessage(message) {
-  // Baileys typically wraps view-once like this
-  const v2 = message?.viewOnceMessageV2?.message;
-  const v2ext = message?.viewOnceMessageV2Extension?.message;
-  return v2 || v2ext || message;
-}
-
 function getMessageType(messageObj) {
-  // messageObj looks like: { imageMessage: {...} } etc.
   if (!messageObj || typeof messageObj !== "object") return null;
-  return Object.keys(messageObj)[0] || null;
+
+  // Only allow media types we can handle
+  const allowed = [
+    "imageMessage",
+    "videoMessage",
+    "audioMessage",
+    "stickerMessage",
+    "documentMessage",
+  ];
+
+  return allowed.find((k) => k in messageObj) || null;
 }
 
 export default {
@@ -30,7 +32,7 @@ export default {
     try {
       const msg = await sms(conn, mek);
 
-      // ✅ MUST be a reply (stop sending without reply)
+      // ✅ MUST be a reply
       const quoted = msg?.quoted;
       if (!quoted) {
         safeReact(ctx, "❗");
@@ -39,44 +41,26 @@ export default {
         );
       }
 
-      // ✅ Prefer sending back to the same chat, and prefer remoteJidAlt when in LID mode
+      // ✅ Prefer sending back to same chat
       const key = mek?.key || {};
       const targetJid =
         key.remoteJidAlt || key.remoteJid || ctx?.from || msg?.from;
 
       await ctx.reply("Gimme a sec… I’m grabbing it for you 🐾💫");
 
-      // ✅ Unwrap view once for type detection
-      // depending on your sms() wrapper, quoted may be:
-      // - { message: {...} } OR already the inner message
-      const quotedMessage = quoted?.message || quoted;
-      const inner = unwrapViewOnceMessage(quotedMessage);
+      // ✅ Detect type from quoted container
+      // Your sms() sets quoted as raw object like { viewOnceMessageV2: {...} } etc.
+      const type = getMessageType(quoted) || quoted?.type;
 
-      // If still has `.message`, unwrap again
-      const container = inner?.message
-        ? unwrapViewOnceMessage(inner.message)
-        : inner;
+      // ✅ Download media using robust downloader
+      const buffer = await downloadMediaMessage(quoted);
 
-      const type = getMessageType(container);
-      if (!type) {
+      // ✅ Guard: NEVER send null/empty
+      if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
         safeReact(ctx, "❗");
         return ctx.reply(
-          "I couldn’t detect the media type 😭 Reply directly to the view-once image/video.",
+          "I couldn’t download that media 😭 Try replying directly to the view-once image/video.",
         );
-      }
-
-      // ✅ Download media
-      // Some downloadMediaMessage implementations want the whole quoted object (with key),
-      // others want the message container. Try quoted first, fallback to inner/container.
-      let buffer;
-      try {
-        buffer = await downloadMediaMessage(quoted);
-      } catch {
-        try {
-          buffer = await downloadMediaMessage(inner);
-        } catch {
-          buffer = await downloadMediaMessage(container);
-        }
       }
 
       const cuteCaption1 = `✨ *Here Is The View Once Image* ✨
@@ -85,24 +69,71 @@ export default {
       const cuteCaption2 = `✨ *Here Is The View Once Video* ✨
 ⚡ 𝘚𝘛𝘙𝘌𝘈𝘔 𝘓𝘐𝘕𝘌 𝘔𝘋 (𝘝2) ⚡`;
 
-      if (type === "imageMessage") {
-        await conn.sendMessage(targetJid, {
-          image: buffer,
-          caption: cuteCaption1,
-        });
-      } else if (type === "videoMessage") {
-        await conn.sendMessage(targetJid, {
-          video: buffer,
-          caption: cuteCaption2,
-        });
-      } else if (type === "audioMessage") {
-        await conn.sendMessage(targetJid, {
-          audio: buffer,
-          mimetype: "audio/mpeg", // adjust if needed
-        });
+      // ✅ If sms() already normalized quoted.type, use that.
+      // Otherwise, downloader already found the correct inner type.
+      const finalType =
+        quoted?.type ||
+        type ||
+        (quoted?.imageMessage
+          ? "imageMessage"
+          : quoted?.videoMessage
+            ? "videoMessage"
+            : quoted?.audioMessage
+              ? "audioMessage"
+              : null);
+
+      if (finalType === "imageMessage") {
+        await conn.sendMessage(
+          targetJid,
+          {
+            image: buffer,
+            caption: cuteCaption1,
+          },
+          { quoted: mek },
+        );
+      } else if (finalType === "videoMessage") {
+        await conn.sendMessage(
+          targetJid,
+          {
+            video: buffer,
+            caption: cuteCaption2,
+          },
+          { quoted: mek },
+        );
+      } else if (finalType === "audioMessage") {
+        await conn.sendMessage(
+          targetJid,
+          {
+            audio: buffer,
+            mimetype: "audio/mpeg",
+          },
+          { quoted: mek },
+        );
+      } else if (finalType === "stickerMessage") {
+        await conn.sendMessage(
+          targetJid,
+          {
+            sticker: buffer,
+          },
+          { quoted: mek },
+        );
+      } else if (finalType === "documentMessage") {
+        await conn.sendMessage(
+          targetJid,
+          {
+            document: buffer,
+            mimetype:
+              quoted?.msg?.mimetype || quoted?.documentMessage?.mimetype,
+            fileName:
+              quoted?.msg?.fileName ||
+              quoted?.documentMessage?.fileName ||
+              "file",
+          },
+          { quoted: mek },
+        );
       } else {
         safeReact(ctx, "❗");
-        return ctx.reply(`Unsupported media type: *${type}* 😭`);
+        return ctx.reply(`Unsupported media type 😭`);
       }
 
       safeReact(ctx, "✅");
