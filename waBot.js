@@ -15,7 +15,11 @@ import { useMongoDBAuthState } from "./lib/auth/mongoAuth.js";
 import config from "./config.js";
 import { handleMessage } from "./messageHandler.js";
 import { getSettings } from "./lib/settings.js";
-import { handleBootCommand } from "./lib/bootHandler.js"; // boot command handler
+import { handleBootCommand } from "./lib/bootHandler.js";
+
+import { getAutoReplies } from "./lib/autoReplyStore.js";
+import { getAutoReacts } from "./lib/autoReactStore.js";
+import { saveMessage, getMessageById } from "./lib/messageStore.js";
 
 // =====================================================
 // FILE PATH
@@ -36,15 +40,17 @@ let lastSettingsLoad = 0;
 
 async function loadSettings() {
   const now = Date.now();
-
-  // refresh every 5 seconds
   if (!cachedSettings || now - lastSettingsLoad > 5000) {
     cachedSettings = await getSettings();
     lastSettingsLoad = now;
   }
-
   return cachedSettings;
 }
+
+// =====================================================
+// HELPERS
+// =====================================================
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // =====================================================
 // EMOJI POOL
@@ -80,70 +86,6 @@ const STATUS_REACTS = [
   "👏",
   "😎",
   "🤯",
-  "😮",
-  "🤩",
-  "🤝",
-  "👌",
-  "👍",
-  "💥",
-  "🎉",
-  "🕺",
-  "💃",
-  "😂",
-  "🤣",
-  "😹",
-  "😆",
-  "😄",
-  "😁",
-  "😅",
-  "😊",
-  "🙂",
-  "😸",
-  "😜",
-  "🤪",
-  "🤭",
-  "👀",
-  "😳",
-  "😱",
-  "🤔",
-  "😏",
-  "😌",
-  "😴",
-  "🥹",
-  "😋",
-  "😶‍🌫️",
-  "😐",
-  "😑",
-  "🙃",
-  "😬",
-  "🫣",
-  "🤗",
-  "🌈",
-  "🌸",
-  "🌼",
-  "🌻",
-  "🍀",
-  "🎨",
-  "📸",
-  "🎬",
-  "🎧",
-  "🎶",
-  "🍿",
-  "☕",
-  "🛸",
-  "🚀",
-  "🐾",
-  "🦋",
-  "😈",
-  "👻",
-  "💀",
-  "🤡",
-  "💩",
-  "👽",
-  "🫠",
-  "🫥",
-  "🤖",
-  "🎯",
 ];
 
 function getRandomReact() {
@@ -206,6 +148,36 @@ export async function connectToWA() {
 
       plugins = await loadPlugins();
       console.log("🔌 Plugins loaded:", Object.keys(plugins).length);
+
+      // ────────────────────────────────────────────────
+      //   MIRROR TYPING IN PRIVATE CHATS
+      // ────────────────────────────────────────────────
+      conn.ev.on("presence.update", async ({ id, presences }) => {
+        if (id.endsWith("@g.us") || id === "status@broadcast") return;
+
+        for (const [participant, presence] of Object.entries(presences)) {
+          if (participant === conn.user?.id) continue;
+
+          if (presence.lastKnownPresence === "composing") {
+            try {
+              await conn.presenceSubscribe(id);
+              await conn.sendPresenceUpdate("composing", id);
+              setTimeout(
+                async () => {
+                  try {
+                    await conn.sendPresenceUpdate("paused", id);
+                  } catch {}
+                },
+                4000 + Math.random() * 3000,
+              );
+            } catch (err) {
+              console.log("[typing mirror error]", err.message);
+            }
+          }
+        }
+      });
+
+      console.log("👀 Typing mirror enabled for private chats");
     }
 
     if (connection === "close") {
@@ -230,24 +202,18 @@ export async function connectToWA() {
   // =====================================================
   conn.ev.on("call", async (callEvents) => {
     const settings = await loadSettings();
-
-    // If feature is disabled, do nothing
     if (!settings.autoRejectCalls) return;
 
     const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     const randomInt = (min, max) =>
       Math.floor(Math.random() * (max - min + 1)) + min;
 
-    // Best-effort pushName lookup (depends on how your bot stores contacts)
     const getPushName = (jid) => {
       const contact =
-        // some setups attach a Map-like contacts store
         conn?.contacts?.[jid] ||
         conn?.contacts?.get?.(jid) ||
-        // common Baileys store pattern
         conn?.store?.contacts?.[jid] ||
         conn?.store?.contacts?.get?.(jid);
-
       return contact?.notify || contact?.name || contact?.verifiedName || null;
     };
 
@@ -255,29 +221,16 @@ export async function connectToWA() {
       if (call.status !== "offer") continue;
 
       const jid = call.from;
-      const name = getPushName(jid) || "bestie"; // cute fallback 😭
+      const name = getPushName(jid) || "bestie";
 
-      // wait 1s to 4s before declining (but message goes first)
       const delayMs = randomInt(1000, 4000);
-
       const brandLine = "⚡ 𝘚𝘛𝘙𝘌𝘈𝘔 𝘓𝘐𝘕𝘌 𝘔𝐃 (𝘝2) ⚡";
-      const cuteMsg =
-        `${brandLine}\n\n` +
-        `Hey ${name} ✨\n` +
-        `Calls aren’t supported right now 😿\n` +
-        `But you can totally drop me a text and I’ll reply super fast 💬⚡\n\n` +
-        `Thanks for understanding 🫶`;
+      const cuteMsg = `${brandLine}\n\nHey ${name} ✨\nCalls aren’t supported right now 😿\nBut you can totally drop me a text and I’ll reply super fast 💬⚡\n\nThanks for understanding 🫶`;
 
       try {
-        // 1) send message first
         await conn.sendMessage(jid, { text: cuteMsg });
-
-        // 2) then wait a random time
         await sleep(delayMs);
-
-        // 3) then reject the call
         await conn.rejectCall(call.id, jid);
-
         console.log(`🚫 Call rejected from: ${jid} (delay ${delayMs}ms)`);
       } catch (err) {
         console.error("❌ [CALL HANDLER ERROR]", err);
@@ -285,41 +238,63 @@ export async function connectToWA() {
     }
   });
 
-  // =====================================================
-  // MESSAGE HANDLER
-  // =====================================================
+  const processedMessages = new Set();
+
   conn.ev.on("messages.upsert", async ({ messages }) => {
     const mek = messages?.[0];
     if (!mek?.message) return;
-
     if (mek.message.reactionMessage) return;
+    console.log(mek);
+    const messageId = mek.key.id;
+
+    // ==============================
+    // 🔒 ADVANCED MESSAGE ID PROTECTION
+    // ==============================
+    if (processedMessages.has(messageId)) return;
+    processedMessages.add(messageId);
+
+    // Auto-clean memory after 60s
+    setTimeout(() => {
+      processedMessages.delete(messageId);
+    }, 60000);
 
     const jid = mek.key.remoteJid;
     const sender = mek.key.participant || jid;
 
-    console.log(mek);
+    await saveMessage(mek);
 
-    // =====================================================
-    // CHECK BOT ENABLE FLAG (KILL SWITCH)
-    // =====================================================
     const settings = await loadSettings();
+
     if (!settings.botEnabled) {
-      // Only allow boot command
       const handled = await handleBootCommand(conn, mek);
-      if (handled) return; // stop further processing
-      return; // ignore all other commands
+      if (handled) return;
+      return;
     }
 
-    // =====================================================
-    // STATUS HANDLING (RESPECTS SETTINGS)
-    // =====================================================
+    // ==============================
+    // ❌ DELETED MESSAGE HANDLER
+    // ==============================
+    if (mek.message?.protocolMessage?.type === 0) {
+      const deletedKey = mek.message.protocolMessage.key;
+      const deletedMsg = await getMessageById(deletedKey.id);
+
+      if (deletedMsg) {
+        await conn.sendMessage(jid, {
+          text: `👀 Message deleted!\n\nSender: ${deletedMsg.sender}\nMessage: ${deletedMsg.text}`,
+        });
+      }
+      return;
+    }
+
+    // ==============================
+    // 📌 STATUS HANDLER
+    // ==============================
     if (jid === "status@broadcast") {
       try {
         if (settings.autoReadStatus) await conn.readMessages([mek.key]);
+
         if (settings.autoReactStatus) {
-          await new Promise((r) =>
-            setTimeout(r, settings.reactDelayMs || 3000),
-          );
+          await delay(settings.reactDelayMs || 3000);
           await conn.sendMessage(sender, {
             react: { text: getRandomReact(), key: mek.key },
           });
@@ -330,15 +305,63 @@ export async function connectToWA() {
       return;
     }
 
-    // =====================================================
-    // NORMAL COMMAND HANDLING
-    // =====================================================
-    try {
-      await handleMessage(conn, mek, config.OWNER_NUMBERS);
-    } catch (err) {
-      console.error("❌ [HANDLER ERROR]", err);
+    // ==============================
+    // 📝 EXTRACT TEXT
+    // ==============================
+    let text = "";
+    if (mek.message.conversation) text = mek.message.conversation;
+    else if (mek.message.extendedTextMessage?.text)
+      text = mek.message.extendedTextMessage.text;
+    else if (mek.message.imageMessage?.caption)
+      text = mek.message.imageMessage.caption;
+    else if (mek.message.videoMessage?.caption)
+      text = mek.message.videoMessage.caption;
+
+    if (!text.trim()) return;
+
+    // ==============================
+    // 🔥 COMMAND FIRST
+    // ==============================
+    const handled = await handleMessage(conn, mek, config.OWNER_NUMBERS);
+    if (handled) return;
+    if (mek.key.fromMe) return;
+
+    // ==============================
+    // 💬 AUTO REPLIES
+    // ==============================
+    if (!jid.endsWith("@g.us")) {
+      const autoReplies = await getAutoReplies();
+      const pushname = mek.pushName || "Friend";
+
+      const match = autoReplies.find((r) =>
+        text.toLowerCase().startsWith(r.trigger.toLowerCase()),
+      );
+
+      if (match) {
+        await conn.sendPresenceUpdate("composing", jid);
+        await delay(1000);
+
+        // Replace ${pushname} in the reply text with the actual sender name
+        const replyText = match.reply.replace(/\$\{pushname\}/g, pushname);
+
+        await conn.sendMessage(jid, { text: replyText });
+        await conn.sendPresenceUpdate("paused", jid);
+      }
+    }
+
+    // ==============================
+    // 😎 AUTO REACT
+    // ==============================
+    const autoReacts = await getAutoReacts();
+    const reactMatch = autoReacts.find((r) =>
+      text.toLowerCase().startsWith(r.trigger.toLowerCase()),
+    );
+
+    if (reactMatch) {
+      await conn.sendMessage(jid, {
+        react: { text: reactMatch.emoji, key: mek.key },
+      });
     }
   });
-
   return conn;
 }

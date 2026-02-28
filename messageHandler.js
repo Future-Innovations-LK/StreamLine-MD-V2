@@ -42,12 +42,12 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     type === "conversation"
       ? mek.message.conversation
       : type === "extendedTextMessage"
-      ? mek.message.extendedTextMessage.text
-      : type === "imageMessage" && mek.message.imageMessage.caption
-      ? mek.message.imageMessage.caption
-      : type === "videoMessage" && mek.message.videoMessage.caption
-      ? mek.message.videoMessage.caption
-      : "";
+        ? mek.message.extendedTextMessage.text
+        : type === "imageMessage" && mek.message.imageMessage.caption
+          ? mek.message.imageMessage.caption
+          : type === "videoMessage" && mek.message.videoMessage.caption
+            ? mek.message.videoMessage.caption
+            : "";
 
   const settings = await loadSettings();
 
@@ -64,12 +64,17 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   // Sender Normalization
   // ---------------------------
   let rawSender;
+
   if (mek.key.fromMe) {
     rawSender = conn.user.id;
   } else if (mek.key.participantAlt) {
     rawSender = mek.key.participantAlt;
+  } else if (mek.key.participant) {
+    rawSender = mek.key.participant;
+  } else if (mek.key.remoteJidAlt) {
+    rawSender = mek.key.remoteJidAlt;
   } else {
-    rawSender = mek.key.participant || mek.key.remoteJid;
+    rawSender = mek.key.remoteJid;
   }
 
   const sender = jidNormalizedUser(rawSender);
@@ -113,7 +118,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
     url,
     caption = "",
     quotedMsg = null,
-    options = {}
+    options = {},
   ) => {
     const head = await axios.head(url).catch(() => null);
 
@@ -122,7 +127,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { document: buf, caption, mimetype: "application/octet-stream" },
-        { quoted: quotedMsg }
+        { quoted: quotedMsg },
       );
     }
 
@@ -141,7 +146,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
           mimetype: "video/mp4",
           ...options,
         },
-        { quoted: quotedMsg }
+        { quoted: quotedMsg },
       );
     }
 
@@ -149,7 +154,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { image: buf, caption, ...options },
-        { quoted: quotedMsg }
+        { quoted: quotedMsg },
       );
     }
 
@@ -157,7 +162,7 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { video: buf, caption, mimetype: contentType, ...options },
-        { quoted: quotedMsg }
+        { quoted: quotedMsg },
       );
     }
 
@@ -165,19 +170,19 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
       return conn.sendMessage(
         jid,
         { audio: buf, caption, mimetype: contentType, ...options },
-        { quoted: quotedMsg }
+        { quoted: quotedMsg },
       );
     }
 
     return conn.sendMessage(
       jid,
       { document: buf, caption, mimetype: contentType, ...options },
-      { quoted: quotedMsg }
+      { quoted: quotedMsg },
     );
   };
 
   // ====================================================
-  // ✅ REPLY LISTENER HANDLING (NEW)
+  // ✅ REPLY LISTENER HANDLING
   // ====================================================
 
   const stanzaId = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
@@ -201,25 +206,35 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
         console.error("[REPLY HANDLER ERROR]", err);
       }
 
-      // ⛔ stop normal command processing
-      return;
+      return true; // ✅ handled
     }
   }
 
   // ====================================================
-  // ✅ NORMAL COMMAND HANDLING
+  // ✅ COMMAND HANDLING
   // ====================================================
-  if (!isCmd) return;
 
   const commands = await loadAllCommands();
 
-  const cmd =
-    commands.find((c) => c.pattern === command) ||
-    commands.find((c) => c.alias?.includes(command));
+  let cmd;
 
-  if (!cmd) return;
+  // 1️⃣ Prefix commands
+  if (isCmd) {
+    cmd =
+      commands.find((c) => c.pattern === command) ||
+      commands.find((c) => c.alias?.includes(command));
+  }
 
-  // react to command
+  // 2️⃣ Non-prefix commands (pattern match directly)
+  if (!cmd) {
+    cmd =
+      commands.find((c) => c.pattern === body.toLowerCase()) ||
+      commands.find((c) => c.alias?.includes(body.toLowerCase()));
+  }
+
+  if (!cmd) return false; // ❌ not handled
+
+  // React to command
   if (cmd.react) {
     await conn.sendMessage(from, {
       react: { text: cmd.react, key: mek.key },
@@ -255,4 +270,6 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   } catch (e) {
     console.error("[PLUGIN ERROR]", e);
   }
+
+  return true; // ✅ handled
 }

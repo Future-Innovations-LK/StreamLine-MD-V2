@@ -1,0 +1,25 @@
+{
+  "bot": {
+    "name": "FutureBot",
+    "Creator": {
+      "name": "Pavantha Champathi",
+      "business": "Future Innovations",
+      "email": "pavantha@futureinnovations.lk",
+      "number": "94713829670"
+    }
+  },
+
+  "branding": {
+    "logo": "https://assets.futureinnovations.lk/streamlinemdv2/logo.png",
+    "banner": "https://assets.futureinnovations.lk/streamlinemdv2/banner.jpg",
+    "thumbnail": "https://assets.futureinnovations.lk/streamlinemdv2/thumb.png",
+    "menuImage": "https://assets.futureinnovations.lk/streamlinemdv2/menu.png",
+    "aliveImage": "https://assets.futureinnovations.lk/streamlinemdv2/alive.png"
+  },
+
+  "urls": {
+    "website": "https://futureinnovations.lk",
+    "github": "https://github.com/Future-Innovations/StreamLine-MD-V2",
+    "support": "https://wa.me/94711641196"
+  }
+}
