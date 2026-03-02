@@ -215,24 +215,25 @@ export async function handleMessage(conn, mek, ownerNumbers = []) {
   // ====================================================
 
   const commands = await loadAllCommands();
-
   let cmd;
 
-  // 1️⃣ Prefix commands
   if (isCmd) {
+    const commandName = command;
     cmd =
-      commands.find((c) => c.pattern === command) ||
-      commands.find((c) => c.alias?.includes(command));
+      commands.find((c) => c.pattern === commandName) ||
+      commands.find((c) => c.alias?.includes(commandName));
+  } else {
+    // ONLY match non-prefixed commands if they are explicitly set to work without one
+    // This assumes your command objects have a 'noPrefix: true' property
+    cmd = commands.find(
+      (c) =>
+        c.noPrefix === true &&
+        (c.pattern === body.toLowerCase() ||
+          c.alias?.includes(body.toLowerCase())),
+    );
   }
 
-  // 2️⃣ Non-prefix commands (pattern match directly)
-  if (!cmd) {
-    cmd =
-      commands.find((c) => c.pattern === body.toLowerCase()) ||
-      commands.find((c) => c.alias?.includes(body.toLowerCase()));
-  }
-
-  if (!cmd) return false; // ❌ not handled
+  if (!cmd) return false;
 
   // React to command
   if (cmd.react) {

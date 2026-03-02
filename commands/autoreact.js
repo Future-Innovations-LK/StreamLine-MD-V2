@@ -4,7 +4,7 @@ import {
   getAutoReacts,
   addAutoReact,
   deleteAutoReact,
-} from "../lib/autoReactStore.js";
+} from "../lib/Stores/autoReactStore.js";
 
 export default {
   pattern: "autoreact",

@@ -4,7 +4,7 @@ import {
   getAutoReplies,
   addAutoReply,
   deleteAutoReply,
-} from "../lib/autoReplyStore.js";
+} from "../lib/Stores/autoReplyStore.js";
 
 export default {
   pattern: "autoreply",

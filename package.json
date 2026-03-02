@@ -6,9 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --watch . --ext js,mjs,cjs,json --ignore node_modules index.js",
+    "dev2": "dotenv -e .env.dev2 -- nodemon --watch . --ext js,mjs,cjs,json --ignore node_modules index.js",
     "start": "pm2 start index.js --deep-monitoring --attach --name StreamLineMD-V2",
+    "start2": "dotenv -e .env.dev2 -- pm2 start index.js --deep-monitoring --attach --name StreamLineMD-V2-2",
     "stop": "pm2 stop StreamLineMD-V2",
-    "restart": "pm2 restart StreamLineMD-V2"
+    "stop2": "pm2 stop StreamLineMD-V2-2",
+    "restart": "pm2 restart StreamLineMD-V2",
+    "restart2": "pm2 restart StreamLineMD-V2-2"
   },
   "keywords": [],
   "author": "Future Innovations LK",
@@ -33,6 +37,7 @@
     "pm2": "^6.0.14"
   },
   "devDependencies": {
+    "dotenv-cli": "^11.0.0",
     "nodemon": "^3.1.11"
   }
 }

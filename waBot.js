@@ -17,9 +17,12 @@ import { handleMessage } from "./messageHandler.js";
 import { getSettings } from "./lib/settings.js";
 import { handleBootCommand } from "./lib/bootHandler.js";
 
-import { getAutoReplies } from "./lib/autoReplyStore.js";
-import { getAutoReacts } from "./lib/autoReactStore.js";
-import { saveMessage, getMessageById } from "./lib/messageStore.js";
+import { getAutoReplies } from "./lib/Stores/autoReplyStore.js";
+import { getAutoReacts } from "./lib/Stores/autoReactStore.js";
+import { saveMessage, getMessageById } from "./lib/Stores/messageStore.js";
+
+import { handleDeletedMessage } from "./lib/helpers/antidelete.js";
+import { saveStatus } from "./lib/Stores/statusStore.js";
 
 // =====================================================
 // FILE PATH
@@ -88,9 +91,8 @@ const STATUS_REACTS = [
   "🤯",
 ];
 
-function getRandomReact() {
-  return STATUS_REACTS[Math.floor(Math.random() * STATUS_REACTS.length)];
-}
+const getRandomReact = () =>
+  STATUS_REACTS[Math.floor(Math.random() * STATUS_REACTS.length)];
 
 // =====================================================
 // WA CONNECTOR
@@ -110,7 +112,8 @@ export async function connectToWA() {
     printQRInTerminal: false,
     browser: Browsers.ubuntu("Chrome"),
     markOnlineOnConnect: true,
-    syncFullHistory: false,
+    syncFullHistory: true,
+    shouldSyncHistoryMessage: () => true,
 
     auth: {
       creds: state.creds,
@@ -121,6 +124,46 @@ export async function connectToWA() {
     qrTimeout: 0,
     getMessage: async () => ({ conversation: "" }),
   });
+
+  // =====================================================
+  // ✅ BLANK MESSAGE BLOCKER (NEW)
+  // =====================================================
+  const _sendMessage = conn.sendMessage.bind(conn);
+
+  conn.sendMessage = async (jid, content = {}, options = {}) => {
+    try {
+      // normalize text
+      if (typeof content?.text === "string") {
+        const t = content.text.trim();
+        if (!t) {
+          console.log("🚫 Blocked blank text message", { jid });
+          return;
+        }
+        content.text = t;
+      }
+
+      // normalize conversation
+      if (typeof content?.conversation === "string") {
+        const t = content.conversation.trim();
+        if (!t) {
+          console.log("🚫 Blocked blank conversation message", { jid });
+          return;
+        }
+        content.conversation = t;
+      }
+
+      // block empty payloads
+      if (!content || Object.keys(content).length === 0) {
+        console.log("🚫 Blocked empty payload sendMessage()", { jid });
+        return;
+      }
+
+      return await _sendMessage(jid, content, options);
+    } catch (err) {
+      console.log("❌ sendMessage wrapper error:", err);
+      return _sendMessage(jid, content, options);
+    }
+  };
 
   // =====================================================
   // CONNECTION LISTENER
@@ -148,36 +191,6 @@ export async function connectToWA() {
 
       plugins = await loadPlugins();
       console.log("🔌 Plugins loaded:", Object.keys(plugins).length);
-
-      // ────────────────────────────────────────────────
-      //   MIRROR TYPING IN PRIVATE CHATS
-      // ────────────────────────────────────────────────
-      conn.ev.on("presence.update", async ({ id, presences }) => {
-        if (id.endsWith("@g.us") || id === "status@broadcast") return;
-
-        for (const [participant, presence] of Object.entries(presences)) {
-          if (participant === conn.user?.id) continue;
-
-          if (presence.lastKnownPresence === "composing") {
-            try {
-              await conn.presenceSubscribe(id);
-              await conn.sendPresenceUpdate("composing", id);
-              setTimeout(
-                async () => {
-                  try {
-                    await conn.sendPresenceUpdate("paused", id);
-                  } catch {}
-                },
-                4000 + Math.random() * 3000,
-              );
-            } catch (err) {
-              console.log("[typing mirror error]", err.message);
-            }
-          }
-        }
-      });
-
-      console.log("👀 Typing mirror enabled for private chats");
     }
 
     if (connection === "close") {
@@ -198,65 +211,43 @@ export async function connectToWA() {
   conn.ev.on("creds.update", saveCreds);
 
   // =====================================================
-  // CALL HANDLER (ANTI-CALL)
+  // CALL HANDLER
   // =====================================================
   conn.ev.on("call", async (callEvents) => {
     const settings = await loadSettings();
     if (!settings.autoRejectCalls) return;
 
-    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-    const randomInt = (min, max) =>
-      Math.floor(Math.random() * (max - min + 1)) + min;
-
-    const getPushName = (jid) => {
-      const contact =
-        conn?.contacts?.[jid] ||
-        conn?.contacts?.get?.(jid) ||
-        conn?.store?.contacts?.[jid] ||
-        conn?.store?.contacts?.get?.(jid);
-      return contact?.notify || contact?.name || contact?.verifiedName || null;
-    };
-
     for (const call of callEvents) {
       if (call.status !== "offer") continue;
 
-      const jid = call.from;
-      const name = getPushName(jid) || "bestie";
-
-      const delayMs = randomInt(1000, 4000);
-      const brandLine = "⚡ 𝘚𝘛𝘙𝘌𝘈𝘔 𝘓𝘐𝘕𝘌 𝘔𝐃 (𝘝2) ⚡";
-      const cuteMsg = `${brandLine}\n\nHey ${name} ✨\nCalls aren’t supported right now 😿\nBut you can totally drop me a text and I’ll reply super fast 💬⚡\n\nThanks for understanding 🫶`;
-
       try {
-        await conn.sendMessage(jid, { text: cuteMsg });
-        await sleep(delayMs);
-        await conn.rejectCall(call.id, jid);
-        console.log(`🚫 Call rejected from: ${jid} (delay ${delayMs}ms)`);
+        await conn.sendMessage(call.from, {
+          text: "⚡ STREAM LINE MD (V2) ⚡\n\nCalls aren’t supported 😿\nSend a message instead 💬",
+        });
+
+        await conn.rejectCall(call.id, call.from);
       } catch (err) {
         console.error("❌ [CALL HANDLER ERROR]", err);
       }
     }
   });
 
+  // =====================================================
+  // MESSAGE HANDLER
+  // =====================================================
   const processedMessages = new Set();
 
   conn.ev.on("messages.upsert", async ({ messages }) => {
     const mek = messages?.[0];
     if (!mek?.message) return;
     if (mek.message.reactionMessage) return;
-    console.log(mek);
+
     const messageId = mek.key.id;
 
-    // ==============================
-    // 🔒 ADVANCED MESSAGE ID PROTECTION
-    // ==============================
     if (processedMessages.has(messageId)) return;
     processedMessages.add(messageId);
 
-    // Auto-clean memory after 60s
-    setTimeout(() => {
-      processedMessages.delete(messageId);
-    }, 60000);
+    setTimeout(() => processedMessages.delete(messageId), 60000);
 
     const jid = mek.key.remoteJid;
     const sender = mek.key.participant || jid;
@@ -266,48 +257,36 @@ export async function connectToWA() {
     const settings = await loadSettings();
 
     if (!settings.botEnabled) {
-      const handled = await handleBootCommand(conn, mek);
-      if (handled) return;
+      await handleBootCommand(conn, mek);
       return;
     }
 
-    // ==============================
-    // ❌ DELETED MESSAGE HANDLER
-    // ==============================
+    // deleted message
     if (mek.message?.protocolMessage?.type === 0) {
-      const deletedKey = mek.message.protocolMessage.key;
-      const deletedMsg = await getMessageById(deletedKey.id);
+      await handleDeletedMessage({
+        conn,
+        mek,
+        getMessageById,
+        jidNormalizedUser,
+      });
+    }
 
-      if (deletedMsg) {
-        await conn.sendMessage(jid, {
-          text: `👀 Message deleted!\n\nSender: ${deletedMsg.sender}\nMessage: ${deletedMsg.text}`,
+    // STATUS
+    if (jid === "status@broadcast") {
+      await saveStatus(mek);
+
+      if (settings.autoReadStatus) await conn.readMessages([mek.key]);
+
+      if (settings.autoReactStatus) {
+        await delay(settings.reactDelayMs || 3000);
+        await conn.sendMessage(sender, {
+          react: { text: getRandomReact(), key: mek.key },
         });
       }
       return;
     }
 
-    // ==============================
-    // 📌 STATUS HANDLER
-    // ==============================
-    if (jid === "status@broadcast") {
-      try {
-        if (settings.autoReadStatus) await conn.readMessages([mek.key]);
-
-        if (settings.autoReactStatus) {
-          await delay(settings.reactDelayMs || 3000);
-          await conn.sendMessage(sender, {
-            react: { text: getRandomReact(), key: mek.key },
-          });
-        }
-      } catch (err) {
-        console.error("❌ [STATUS ERROR]", err);
-      }
-      return;
-    }
-
-    // ==============================
-    // 📝 EXTRACT TEXT
-    // ==============================
+    // TEXT EXTRACT
     let text = "";
     if (mek.message.conversation) text = mek.message.conversation;
     else if (mek.message.extendedTextMessage?.text)
@@ -319,16 +298,10 @@ export async function connectToWA() {
 
     if (!text.trim()) return;
 
-    // ==============================
-    // 🔥 COMMAND FIRST
-    // ==============================
     const handled = await handleMessage(conn, mek, config.OWNER_NUMBERS);
-    if (handled) return;
-    if (mek.key.fromMe) return;
+    if (handled || mek.key.fromMe) return;
 
-    // ==============================
-    // 💬 AUTO REPLIES
-    // ==============================
+    // AUTO REPLIES
     if (!jid.endsWith("@g.us")) {
       const autoReplies = await getAutoReplies();
       const pushname = mek.pushName || "Friend";
@@ -341,7 +314,6 @@ export async function connectToWA() {
         await conn.sendPresenceUpdate("composing", jid);
         await delay(1000);
 
-        // Replace ${pushname} in the reply text with the actual sender name
         const replyText = match.reply.replace(/\$\{pushname\}/g, pushname);
 
         await conn.sendMessage(jid, { text: replyText });
@@ -349,9 +321,7 @@ export async function connectToWA() {
       }
     }
 
-    // ==============================
-    // 😎 AUTO REACT
-    // ==============================
+    // AUTO REACT
     const autoReacts = await getAutoReacts();
     const reactMatch = autoReacts.find((r) =>
       text.toLowerCase().startsWith(r.trigger.toLowerCase()),
@@ -363,5 +333,6 @@ export async function connectToWA() {
       });
     }
   });
+
   return conn;
 }

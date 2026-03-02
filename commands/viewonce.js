@@ -1,5 +1,11 @@
-// commands/viewonce.js
 import { downloadMediaMessage, sms } from "../lib/msg.js";
+import { jidNormalizedUser } from "@whiskeysockets/baileys";
+
+/* =========================
+   Helpers
+========================= */
+
+const FOOTER = "\n\n> *Powered By Stream Line MD V2*";
 
 function safeReact(ctx, emoji) {
   try {
@@ -10,7 +16,6 @@ function safeReact(ctx, emoji) {
 function getMessageType(messageObj) {
   if (!messageObj || typeof messageObj !== "object") return null;
 
-  // Only allow media types we can handle
   const allowed = [
     "imageMessage",
     "videoMessage",
@@ -22,102 +27,112 @@ function getMessageType(messageObj) {
   return allowed.find((k) => k in messageObj) || null;
 }
 
+function normalizeArgs(rawArgs) {
+  if (!rawArgs) return [];
+  if (Array.isArray(rawArgs))
+    return rawArgs.map((a) => String(a).toLowerCase());
+  return String(rawArgs)
+    .split(/\s+/)
+    .map((a) => a.toLowerCase())
+    .filter(Boolean);
+}
+
+function caption(text) {
+  // Demon/edgy vibe in caption
+  return `🖤 ${text} 🖤${FOOTER}`;
+}
+
+/* =========================
+   Command
+========================= */
+
 export default {
   pattern: "vv",
   alias: ["viewonce"],
   category: "Tools",
-  react: "🫣",
+  react: "🫣", // could change to 🩸 for extra vibes
 
   async function(conn, mek, m, ctx) {
     try {
       const msg = await sms(conn, mek);
-
-      // ✅ MUST be a reply
       const quoted = msg?.quoted;
+
       if (!quoted) {
         safeReact(ctx, "❗");
         return ctx.reply(
-          "Heheee~ please *reply* to the view-once media you want me to save ✨🫶",
+          "🩸 Reply to a *view-once* media to summon it from the shadows…",
         );
       }
 
-      // ✅ Prefer sending back to same chat
-      const key = mek?.key || {};
-      const targetJid =
-        key.remoteJidAlt || key.remoteJid || ctx?.from || msg?.from;
+      const args = normalizeArgs(ctx?.args ?? m?.args);
+      const usePrivate =
+        args.includes("p") || args.includes("-p") || args.includes("--p");
 
-      await ctx.reply("Gimme a sec… I’m grabbing it for you 🐾💫");
+      const chatJid = ctx?.from || mek?.key?.remoteJid || msg?.from;
+      const isGroup = String(chatJid || "").endsWith("@g.us");
 
-      // ✅ Detect type from quoted container
-      // Your sms() sets quoted as raw object like { viewOnceMessageV2: {...} } etc.
-      const type = getMessageType(quoted) || quoted?.type;
+      const senderJidRaw =
+        mek?.key?.participant || msg?.sender || mek?.participant;
+      const senderJid = senderJidRaw ? jidNormalizedUser(senderJidRaw) : null;
 
-      // ✅ Download media using robust downloader
+      const botJidRaw =
+        conn?.user?.id || conn?.user?.jid || conn?.user?.user?.id;
+      const botJid = botJidRaw ? jidNormalizedUser(botJidRaw) : null;
+
+      let targetJid = chatJid;
+      if (usePrivate) {
+        if (isGroup) {
+          if (!senderJid)
+            return ctx.reply(
+              "⚠️ Cannot sense the sender's essence in this group…",
+            );
+          targetJid = senderJid;
+        } else {
+          if (!botJid) return ctx.reply("⚠️ Cannot summon my powers…");
+          targetJid = botJid;
+        }
+      }
+
+      // Status message
+      const statusMsg = await conn.sendMessage(
+        chatJid,
+        { text: "⏳ Drawing the view-once from the void…" },
+        { quoted: mek },
+      );
+
+      // Download media
       const buffer = await downloadMediaMessage(quoted);
+      const type = quoted?.type || getMessageType(quoted);
 
-      // ✅ Guard: NEVER send null/empty
       if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
         safeReact(ctx, "❗");
         return ctx.reply(
-          "I couldn’t download that media 😭 Try replying directly to the view-once image/video.",
+          "❌ The media could not be extracted from the shadows.",
         );
       }
 
-      const cuteCaption1 = `✨ *Here Is The View Once Image* ✨
-⚡ 𝘚𝘛𝘙𝘌𝘈𝘔 𝘓𝘐𝘕𝘌 𝘔𝘋 (𝘝2) ⚡`;
-
-      const cuteCaption2 = `✨ *Here Is The View Once Video* ✨
-⚡ 𝘚𝘛𝘙𝘌𝘈𝘔 𝘓𝘐𝘕𝘌 𝘔𝘋 (𝘝2) ⚡`;
-
-      // ✅ If sms() already normalized quoted.type, use that.
-      // Otherwise, downloader already found the correct inner type.
-      const finalType =
-        quoted?.type ||
-        type ||
-        (quoted?.imageMessage
-          ? "imageMessage"
-          : quoted?.videoMessage
-            ? "videoMessage"
-            : quoted?.audioMessage
-              ? "audioMessage"
-              : null);
-
-      if (finalType === "imageMessage") {
+      // Send saved media with demon vibe captions
+      if (type === "imageMessage" || type === "viewOnceMessage") {
         await conn.sendMessage(
           targetJid,
-          {
-            image: buffer,
-            caption: cuteCaption1,
-          },
+          { image: buffer, caption: caption("✅ View-once image claimed!") },
           { quoted: mek },
         );
-      } else if (finalType === "videoMessage") {
+      } else if (type === "videoMessage") {
         await conn.sendMessage(
           targetJid,
-          {
-            video: buffer,
-            caption: cuteCaption2,
-          },
+          { video: buffer, caption: caption("✅ View-once video claimed!") },
           { quoted: mek },
         );
-      } else if (finalType === "audioMessage") {
+      } else if (type === "audioMessage") {
         await conn.sendMessage(
           targetJid,
-          {
-            audio: buffer,
-            mimetype: "audio/mpeg",
-          },
+          { audio: buffer, mimetype: "audio/mpeg" },
           { quoted: mek },
         );
-      } else if (finalType === "stickerMessage") {
-        await conn.sendMessage(
-          targetJid,
-          {
-            sticker: buffer,
-          },
-          { quoted: mek },
-        );
-      } else if (finalType === "documentMessage") {
+      } else if (type === "stickerMessage") {
+        await conn.sendMessage(targetJid, { sticker: buffer }, { quoted: mek });
+      } else if (type === "documentMessage") {
         await conn.sendMessage(
           targetJid,
           {
@@ -133,14 +148,24 @@ export default {
         );
       } else {
         safeReact(ctx, "❗");
-        return ctx.reply(`Unsupported media type 😭`);
+        return ctx.reply("⚠️ Media type lost in the abyss…");
       }
+
+      // Done message
+      await conn.sendMessage(chatJid, {
+        text: usePrivate
+          ? isGroup
+            ? "✅ Claimed & sent to sender DM from the shadows."
+            : "✅ Claimed & stored in my void."
+          : "✅ Media claimed from the abyss.",
+        edit: statusMsg.key,
+      });
 
       safeReact(ctx, "✅");
     } catch (e) {
       console.log(e);
       safeReact(ctx, "❌");
-      ctx.reply("something went wrong while saving 😭 please try again?");
+      ctx.reply("❌ Failed to extract media from the shadows…");
     }
   },
 };
