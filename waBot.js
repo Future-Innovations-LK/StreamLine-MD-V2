@@ -23,6 +23,7 @@ import { saveMessage, getMessageById } from "./lib/Stores/messageStore.js";
 
 import { handleDeletedMessage } from "./lib/helpers/antidelete.js";
 import { saveStatus } from "./lib/Stores/statusStore.js";
+import { getGroupAutoReact } from "./lib/Stores/groupAutoReactStore.js";
 
 // =====================================================
 // FILE PATH
@@ -300,6 +301,21 @@ export async function connectToWA() {
 
     const handled = await handleMessage(conn, mek, config.OWNER_NUMBERS);
     if (handled || mek.key.fromMe) return;
+
+    if (jid.endsWith("@g.us")) {
+      const group = await getGroupAutoReact(jid);
+      if (group?.enabled) {
+        const triggers = group.triggers || [];
+        const match = triggers.find((r) =>
+          text.toLowerCase().startsWith(r.trigger.toLowerCase()),
+        );
+        if (match) {
+          await conn.sendMessage(jid, {
+            react: { text: match.emoji, key: mek.key },
+          });
+        }
+      }
+    }
 
     // AUTO REPLIES
     if (!jid.endsWith("@g.us")) {
