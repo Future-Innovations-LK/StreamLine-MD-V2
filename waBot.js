@@ -23,7 +23,10 @@ import { saveMessage, getMessageById } from "./lib/Stores/messageStore.js";
 
 import { handleDeletedMessage } from "./lib/helpers/antidelete.js";
 import { saveStatus } from "./lib/Stores/statusStore.js";
-import { getGroupAutoReact } from "./lib/Stores/groupAutoReactStore.js";
+import {
+  getGroupAutoReact,
+  getRandomEmoji,
+} from "./lib/Stores/groupAutoReactStore.js";
 
 // =====================================================
 // FILE PATH
