@@ -290,6 +290,16 @@ export async function connectToWA() {
       return;
     }
 
+    if (jid.endsWith("@g.us")) {
+      const group = await getGroupAutoReact(jid);
+      if (group?.enabled && group?.emojis?.length) {
+        const emoji = getRandomEmoji(group.emojis);
+        await conn.sendMessage(jid, {
+          react: { text: emoji, key: mek.key },
+        });
+      }
+    }
+
     // TEXT EXTRACT
     let text = "";
     if (mek.message.conversation) text = mek.message.conversation;
@@ -305,13 +315,6 @@ export async function connectToWA() {
     const handled = await handleMessage(conn, mek, config.OWNER_NUMBERS);
     if (handled || mek.key.fromMe) return;
 
-    if (jid.endsWith("@g.us")) {
-      const group = await getGroupAutoReact(jid);
-      if (group?.enabled && group?.emojis?.length) {
-        const emoji = getRandomEmoji(group.emojis);
-        await conn.sendMessage(jid, { react: { text: emoji, key: mek.key } });
-      }
-    }
     // AUTO REPLIES
     if (!jid.endsWith("@g.us")) {
       const autoReplies = await getAutoReplies();
