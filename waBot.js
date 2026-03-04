@@ -304,19 +304,11 @@ export async function connectToWA() {
 
     if (jid.endsWith("@g.us")) {
       const group = await getGroupAutoReact(jid);
-      if (group?.enabled) {
-        const triggers = group.triggers || [];
-        const match = triggers.find((r) =>
-          text.toLowerCase().startsWith(r.trigger.toLowerCase()),
-        );
-        if (match) {
-          await conn.sendMessage(jid, {
-            react: { text: match.emoji, key: mek.key },
-          });
-        }
+      if (group?.enabled && group?.emojis?.length) {
+        const emoji = getRandomEmoji(group.emojis);
+        await conn.sendMessage(jid, { react: { text: emoji, key: mek.key } });
       }
     }
-
     // AUTO REPLIES
     if (!jid.endsWith("@g.us")) {
       const autoReplies = await getAutoReplies();

@@ -1,33 +1,27 @@
 import { registerReply } from "../lib/replyStore.js";
 import {
   getGroupAutoReact,
-  addGroupAutoReact,
-  removeGroupAutoReact,
   setGroupAutoReactEnabled,
+  setGroupEmojis,
 } from "../lib/Stores/groupAutoReactStore.js";
 
 export default {
   pattern: "groupautoreact",
-  disc: "Manage Group Auto Reacts",
+  alias: ["gar"],
+  disc: "Manage group auto-react (random emoji every msg)",
   category: "Owner",
   react: "💫",
   on: "message",
 
   async function(conn, mek, m, ctx) {
-    if (!ctx.isOwner) return m.reply("⛔ Only owner can use this command.");
+    if (!ctx.isOwner && !ctx.isAdmin)
+      return m.reply("⛔ Only admins/owner can use this command.");
     if (!ctx.from.endsWith("@g.us"))
       return m.reply("⚠️ Only usable in groups.");
 
     const group = await getGroupAutoReact(ctx.from);
-    const list =
-      group?.triggers
-        ?.map((r, i) => `${i + 1}. "${r.trigger}" → "${r.emoji}"`)
-        .join("\n") || "No auto reacts set.";
-
-    const menu =
-      `💫 *GROUP AUTO REACT*\nEnabled: ${group?.enabled ? "✅" : "❌"}\n\n` +
-      `${list}\n\n` +
-      `Commands:\n*add <trigger> <emoji>*\n*remove <number>*\n*on/off*`;
+    const emojiList = group?.emojis?.join(" ") || "No emojis set yet.";
+    const menu = `💫 *GROUP AUTO REACT*\nEnabled: ${group?.enabled ? "✅" : "❌"}\nEmojis: ${emojiList}\n\nCommands:\n*on/off*\n*setemojis ❤️🔥✨*`;
 
     const sent = await conn.sendMessage(
       ctx.from,
@@ -42,40 +36,7 @@ export default {
 
         const [cmd, ...rest] = text.trim().split(/\s+/);
 
-        if (cmd.toLowerCase() === "add") {
-          const spaceIdx = text.indexOf(" ");
-          const secondSpace = text.indexOf(" ", spaceIdx + 1);
-          if (secondSpace === -1)
-            return conn.sendMessage(
-              ctx2.from,
-              { text: "❌ Format: add <trigger> <emoji>" },
-              { quoted: mek },
-            );
-
-          const trigger = text.slice(spaceIdx + 1, secondSpace).toLowerCase();
-          const emoji = text.slice(secondSpace + 1);
-
-          await addGroupAutoReact(ctx2.from, trigger, emoji);
-          await conn.sendMessage(
-            ctx2.from,
-            { text: `✅ Added: "${trigger}" → "${emoji}"` },
-            { quoted: mek },
-          );
-        } else if (cmd.toLowerCase() === "remove") {
-          const idx = Number(rest[0]) - 1;
-          const success = await removeGroupAutoReact(ctx2.from, idx);
-          if (!success)
-            return conn.sendMessage(
-              ctx2.from,
-              { text: "❌ Invalid number!" },
-              { quoted: mek },
-            );
-          await conn.sendMessage(
-            ctx2.from,
-            { text: `✅ Removed auto react #${idx + 1}` },
-            { quoted: mek },
-          );
-        } else if (["on", "off"].includes(cmd.toLowerCase())) {
+        if (["on", "off"].includes(cmd.toLowerCase())) {
           await setGroupAutoReactEnabled(ctx2.from, cmd.toLowerCase() === "on");
           await conn.sendMessage(
             ctx2.from,
@@ -84,10 +45,24 @@ export default {
             },
             { quoted: mek },
           );
+        } else if (cmd.toLowerCase() === "setemojis") {
+          const emojis = rest;
+          if (!emojis.length)
+            return conn.sendMessage(
+              ctx2.from,
+              { text: "❌ Provide emojis like: setemojis ❤️🔥✨" },
+              { quoted: mek },
+            );
+          await setGroupEmojis(ctx2.from, emojis);
+          await conn.sendMessage(
+            ctx2.from,
+            { text: `✅ Emoji list updated: ${emojis.join(" ")}` },
+            { quoted: mek },
+          );
         } else {
           await conn.sendMessage(
             ctx2.from,
-            { text: "❌ Unknown command. Use add/remove/on/off" },
+            { text: "❌ Unknown command. Use on/off or setemojis" },
             { quoted: mek },
           );
         }
