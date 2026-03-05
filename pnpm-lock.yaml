@@ -41,6 +41,9 @@ importers:
       form-data:
         specifier: ^4.0.5
         version: 4.0.5
+      gifted-btns:
+        specifier: ^1.0.2
+        version: 1.0.2
       mongodb:
         specifier: ^7.0.0
         version: 7.1.0(socks@2.8.7)
@@ -1373,6 +1376,9 @@ packages:
   get-uri@6.0.5:
     resolution: {integrity: sha512-b1O07XYq8eRuVzBNgJLstU6FYc1tS6wnMtF1I1D9lE8LxZSOGZ7LhxN54yPP6mGw5f2CkXY2BQUL9Fx41qvcIg==}
     engines: {node: '>= 14'}
+
+  gifted-btns@1.0.2:
+    resolution: {integrity: sha512-NSND4V19/UYoO9fTRP6UEKNNKoXXuFsXMOPnOHfnt7sC6itwPLba/dHPeQgDSStYtWO82aqaO7JnxcdB9OusMQ==}
 
   git-node-fs@1.0.0:
     resolution: {integrity: sha512-bLQypt14llVXBg0S0u8q8HmU7g9p3ysH+NvVlae5vILuUvs759665HvmR5+wb04KjHyjFcDRxdYb4kyNnluMUQ==}
@@ -3765,6 +3771,8 @@ snapshots:
       debug: 4.4.3(supports-color@5.5.0)
     transitivePeerDependencies:
       - supports-color
+
+  gifted-btns@1.0.2: {}
 
   git-node-fs@1.0.0(js-git@0.7.8):
     optionalDependencies:

@@ -1,21 +1,13 @@
-// /commands/ping.js
 import fetch from "node-fetch";
 import os from "os";
 import process from "process";
 
-import {
-  generateWAMessageFromContent,
-  prepareWAMessageMedia,
-  proto,
-} from "@whiskeysockets/baileys";
-
-//import bail from "@future-innovations-lk/baileys";
+import gifted from "gifted-btns";
+const { sendButtons } = gifted;
 import brand from "../lib/Config/brand.js";
 
-//const { generateWAMessageFromContent, prepareWAMessageMedia, proto } = bail;
-
 /* =========================
-   CONFIG 🧾✨
+   CONFIG
 ========================= */
 const UI = {
   footer: "Future Innovations LK 🛸",
@@ -45,6 +37,7 @@ function formatUptime(sec) {
 function getTargetJid(mek, ctx) {
   const remote = mek?.key?.remoteJid || "";
   const isGroup = remote.endsWith("@g.us");
+
   return (
     (isGroup ? remote : null) ||
     mek?.key?.senderLid ||
@@ -66,47 +59,6 @@ function getBotMeta(ctx) {
   return { botName, botNumber };
 }
 
-async function fetchImageBuffer(url) {
-  const res = await fetch(url);
-  if (!res.ok)
-    throw new Error(`Image fetch failed: ${res.status} ${res.statusText}`);
-  return Buffer.from(await res.arrayBuffer());
-}
-
-async function buildImageMedia(conn, imageUrl) {
-  const imgBuf = await fetchImageBuffer(imageUrl);
-  return prepareWAMessageMedia(
-    { image: imgBuf },
-    { upload: conn.waUploadToServer },
-  );
-}
-
-function buildQuotedContact() {
-  // same "quoted vcard trick" vibe as your menu
-  return {
-    stanzaId: "FAKE_META_ID_ALIVE_001",
-    participant: "13135550002@s.whatsapp.net",
-    remoteJid: "status@broadcast",
-    quotedMessage: {
-      contactMessage: {
-        displayName: "⚡ BOT STATUS ⚡",
-        vcard:
-          "BEGIN:VCARD\n" +
-          "VERSION:3.0\n" +
-          "N:StreamLine;;;;\n" +
-          "FN:StreamLine MD V2\n" +
-          "TEL;waid=13135550002:+1 313 555 0002\n" +
-          "END:VCARD",
-      },
-    },
-  };
-}
-
-function getMyUserJid(conn) {
-  const myLid = conn?.authState?.creds?.me?.lid || conn?.user?.lid || null;
-  return myLid ? `${myLid}@lid` : conn?.user?.id;
-}
-
 function buildAliveCaption({ botName, botNumber, host, uptime, ping }) {
   return (
     `✅ *${botName}* is *ALIVE* ⚡\n\n` +
@@ -123,7 +75,7 @@ function buildAliveCaption({ botName, botNumber, host, uptime, ping }) {
 ========================= */
 export default {
   pattern: "alive",
-  alias: ["a", "ping"],
+  alias: ["a"],
   disc: "Check if the bot is alive",
   category: "Main",
   react: "⚡",
@@ -131,12 +83,7 @@ export default {
   function: async (conn, mek, m, ctx) => {
     const targetJid = getTargetJid(mek, ctx);
 
-    // measure "ping" as handler response time
     const t0 = Date.now();
-
-    // optional: show instant feedback (not required)
-    // await conn.sendMessage(targetJid, { text: "⚡ Checking..." }, { quoted: mek });
-
     const ping = ((Date.now() - t0) / 1000).toFixed(2);
 
     const { botName, botNumber } = getBotMeta(ctx);
@@ -151,50 +98,31 @@ export default {
       ping,
     });
 
-    // alive image: use brand first, else fallback
     const aliveImg =
       brand?.branding?.aliveImage ||
-      brand?.branding?.menuImage || // fallback to menu image if you want
+      brand?.branding?.menuImage ||
       UI.fallbackAliveImage;
 
-    // build image media (safe fallback)
-    let media;
-    try {
-      media = await buildImageMedia(conn, aliveImg);
-    } catch {
-      media = { imageMessage: {} };
-    }
+    await sendButtons(conn, targetJid, {
+      title: "⚡ BOT STATUS",
+      text: caption,
+      footer: UI.footer,
+      image: { url: aliveImg },
+      aimode: true,
 
-    const content = proto.Message.fromObject({
-      viewOnceMessage: {
-        message: {
-          buttonsMessage: {
-            imageMessage: {
-              ...media.imageMessage,
-              caption,
-              viewOnce: true,
-              contextInfo: buildQuotedContact(),
-            },
-            contentText: caption,
-            footerText: UI.footer,
-            headerType: 4,
-            buttons: [
-              {
-                buttonId: "noop",
-                buttonText: { displayText: "✅ Alive" },
-                type: 1,
-              },
-            ],
-          },
+      buttons: [
+        {
+          id: "alive",
+          text: "✅ Alive",
         },
-      },
+        {
+          name: "cta_url",
+          buttonParamsJson: JSON.stringify({
+            display_text: "🌐 Visit Future Innovations",
+            url: "https://futureinnovations.lk",
+          }),
+        },
+      ],
     });
-
-    const msg = generateWAMessageFromContent(targetJid, content, {
-      userJid: getMyUserJid(conn),
-      quoted: mek,
-    });
-
-    await conn.relayMessage(targetJid, msg.message, { messageId: msg.key.id });
   },
 };

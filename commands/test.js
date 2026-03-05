@@ -1,4 +1,4 @@
-import axios from "axios";
+/*import axios from "axios";
 import FormData from "form-data";
 import fetch from "node-fetch";
 
@@ -82,5 +82,170 @@ export default {
         { quoted: mek }
       );
     }
+  },
+};
+*/
+
+import gifted from "gifted-btns";
+const { sendInteractiveMessage } = gifted;
+
+export default {
+  pattern: "test",
+  alias: ["btn"],
+  desc: "Test gifted-btns features",
+  category: "Dev",
+
+  function: async (conn, mek, m, ctx) => {
+    const jid = mek.key.remoteJid;
+    const flag = ctx.q?.toLowerCase()?.trim();
+
+    let buttons = [];
+
+    switch (flag) {
+      case "c":
+      case "copy":
+        buttons = [
+          {
+            name: "cta_copy",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Copy Code",
+              copy_code: "STREAMLINE-123",
+            }),
+          },
+        ];
+        break;
+
+      case "u":
+      case "url":
+        buttons = [
+          {
+            name: "cta_url",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Open Website",
+              url: "https://futureinnovations.lk",
+            }),
+          },
+        ];
+        break;
+
+      case "call":
+        buttons = [
+          {
+            name: "cta_call",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Call Support",
+              phone_number: "+94713829670",
+            }),
+          },
+        ];
+        break;
+
+      case "qr":
+      case "quick":
+        buttons = [
+          {
+            name: "quick_reply",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Hello Bot",
+              id: "hello_test",
+            }),
+          },
+        ];
+        break;
+
+      case "list":
+        buttons = [
+          {
+            name: "single_select",
+            buttonParamsJson: JSON.stringify({
+              title: "Choose an option",
+              sections: [
+                {
+                  title: "Test Options",
+                  rows: [
+                    {
+                      id: "opt_1",
+                      title: "Option 1",
+                      description: "First test option",
+                    },
+                    {
+                      id: "opt_2",
+                      title: "Option 2",
+                      description: "Second test option",
+                    },
+                  ],
+                },
+              ],
+            }),
+          },
+        ];
+        break;
+
+      case "loc":
+      case "location":
+        buttons = [
+          {
+            name: "send_location",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Share Location",
+            }),
+          },
+        ];
+        break;
+
+      case "all":
+      default:
+        buttons = [
+          {
+            name: "quick_reply",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Ping",
+              id: "ping_test",
+            }),
+          },
+          {
+            name: "cta_copy",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Copy Code",
+              copy_code: "STREAMLINE",
+            }),
+          },
+          {
+            name: "cta_url",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Visit Site",
+              url: "https://futureinnovations.lk",
+            }),
+          },
+          {
+            name: "cta_call",
+            buttonParamsJson: JSON.stringify({
+              display_text: "Call Me",
+              phone_number: "+94713829670",
+            }),
+          },
+          {
+            name: "single_select",
+            buttonParamsJson: JSON.stringify({
+              title: "Select Test",
+              sections: [
+                {
+                  title: "Choices",
+                  rows: [
+                    { id: "a", title: "Alpha" },
+                    { id: "b", title: "Beta" },
+                  ],
+                },
+              ],
+            }),
+          },
+        ];
+    }
+
+    await sendInteractiveMessage(conn, jid, {
+      text: `🧪 Button Test: ${flag || "all"}`,
+      footer: "StreamLine MD V2 Testing",
+      interactiveButtons: buttons,
+    });
   },
 };
