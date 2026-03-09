@@ -243,6 +243,7 @@ export async function connectToWA() {
 
   conn.ev.on("messages.upsert", async ({ messages }) => {
     const mek = messages?.[0];
+    console.dir(mek, { depth: null, colors: true });
     if (!mek?.message) return;
     if (mek.message.reactionMessage) return;
 
