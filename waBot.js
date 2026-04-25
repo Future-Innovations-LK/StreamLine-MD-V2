@@ -291,16 +291,6 @@ export async function connectToWA() {
       return;
     }
 
-    if (jid.endsWith("@g.us")) {
-      const group = await getGroupAutoReact(jid);
-      if (group?.enabled && group?.emojis?.length) {
-        const emoji = getRandomEmoji(group.emojis);
-        await conn.sendMessage(jid, {
-          react: { text: emoji, key: mek.key },
-        });
-      }
-    }
-
     // TEXT EXTRACT
     let text = "";
     if (mek.message.conversation) text = mek.message.conversation;
@@ -312,6 +302,31 @@ export async function connectToWA() {
       text = mek.message.videoMessage.caption;
 
     if (!text.trim()) return;
+
+    const prefix = settings.prefix || config.PREFIX || ".";
+    const isCmd = text.trim().startsWith(prefix);
+
+    const senderNumber = sender.split("@")[0];
+    const isOwner = config.OWNER_NUMBERS.includes(senderNumber);
+
+    // 👑 OWNER AUTO REACT (NO COMMAND)
+    if (isOwner && !isCmd) {
+      await conn.sendMessage(jid, {
+        react: { text: "👑", key: mek.key },
+      });
+
+      return; // 🚫 stop everything (no group auto react)
+    }
+
+    if (jid.endsWith("@g.us")) {
+      const group = await getGroupAutoReact(jid);
+      if (group?.enabled && group?.emojis?.length) {
+        const emoji = getRandomEmoji(group.emojis);
+        await conn.sendMessage(jid, {
+          react: { text: emoji, key: mek.key },
+        });
+      }
+    }
 
     const handled = await handleMessage(conn, mek, config.OWNER_NUMBERS);
     if (handled || mek.key.fromMe) return;
