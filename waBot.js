@@ -306,8 +306,24 @@ export async function connectToWA() {
     const prefix = settings.prefix || config.PREFIX || ".";
     const isCmd = text.trim().startsWith(prefix);
 
-    const senderNumber = sender.split("@")[0];
-    const isOwner = config.OWNER_NUMBERS.includes(senderNumber);
+    let rawSender;
+
+    // 🔥 prefer real phone number if available
+    if (mek.key.remoteJidAlt) {
+      rawSender = mek.key.remoteJidAlt;
+    } else if (mek.key.participantAlt) {
+      rawSender = mek.key.participantAlt;
+    } else if (mek.key.participant) {
+      rawSender = mek.key.participant;
+    } else {
+      rawSender = mek.key.remoteJid;
+    }
+
+    const normalizedSender = jidNormalizedUser(rawSender);
+    const senderNumber = normalizedSender.split("@")[0];
+
+    const isOwner =
+      config.OWNER_NUMBERS.includes(senderNumber) || mek.key.fromMe;
 
     // 👑 OWNER AUTO REACT (NO COMMAND)
     if (isOwner && !isCmd) {
