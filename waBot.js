@@ -322,19 +322,14 @@ export async function connectToWA() {
     const normalizedSender = jidNormalizedUser(rawSender);
     const senderNumber = normalizedSender.split("@")[0];
 
-    const isOwner =
-      config.OWNER_NUMBERS.includes(senderNumber) || mek.key.fromMe;
-
-    // 👑 OWNER AUTO REACT (NO COMMAND)
-    if (isOwner && !isCmd) {
-      await conn.sendMessage(jid, {
-        react: { text: "👑", key: mek.key },
-      });
-
-      return; // 🚫 stop everything (no group auto react)
-    }
+    const isOwner = config.OWNER_NUMBERS.includes(senderNumber);
 
     if (jid.endsWith("@g.us")) {
+      if (isOwner && !isCmd) {
+        await conn.sendMessage(jid, {
+          react: { text: "👑", key: mek.key },
+        });
+      }
       const group = await getGroupAutoReact(jid);
       if (group?.enabled && group?.emojis?.length) {
         const emoji = getRandomEmoji(group.emojis);
